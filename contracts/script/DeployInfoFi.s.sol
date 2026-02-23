@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Script} from "forge-std/Script.sol";
+import {InfoFi} from "../src/InfoFi.sol";
+
+contract DeployInfoFi is Script {
+    function run() external returns (InfoFi deployed) {
+        vm.startBroadcast();
+        deployed = new InfoFi();
+        vm.stopBroadcast();
+    }
+}
+
