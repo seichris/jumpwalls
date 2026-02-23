@@ -37,7 +37,7 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
   const upper = status.toUpperCase();
   if (upper === "HIRED") return "warning";
   if (upper === "DELIVERED") return "default";
-  if (upper === "CLOSED") return "success";
+  if (upper === "CLOSED") return "default";
   return "secondary";
 }
 

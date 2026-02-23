@@ -23,10 +23,62 @@ function shortHash(value: string) {
 
 function statusVariant(status: string): "default" | "secondary" | "warning" | "success" {
   const upper = status.toUpperCase();
-  if (upper === "OPEN") return "default";
+  if (upper === "OPEN") return "success";
   if (upper === "HIRED") return "warning";
-  if (upper === "CLOSED") return "success";
+  if (upper === "CLOSED") return "default";
   return "secondary";
+}
+
+function offeredTokensForRequest(request: InfoFiRequestWithDetails): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string | null | undefined) => {
+    if (!value || !value.trim()) return;
+    const token = value.toLowerCase();
+    if (seen.has(token)) return;
+    seen.add(token);
+    out.push(token);
+  };
+
+  push(request.paymentToken);
+  const withOptional = request as InfoFiRequestWithDetails & {
+    offeredTokens?: unknown;
+    paymentTokens?: unknown;
+  };
+  const pushFromMaybeList = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    for (const item of value) {
+      if (typeof item === "string") push(item);
+    }
+  };
+  pushFromMaybeList(withOptional.offeredTokens);
+  pushFromMaybeList(withOptional.paymentTokens);
+
+  for (const offer of request.offers as Array<InfoFiOffer & { token?: string }>) {
+    if (typeof offer.token === "string") push(offer.token);
+  }
+
+  return out;
+}
+
+function maxAmountWeiByTokenForRequest(request: InfoFiRequestWithDetails): Record<string, string> {
+  const out: Record<string, string> = {
+    [request.paymentToken.toLowerCase()]: request.maxAmountWei,
+  };
+  const withOptional = request as InfoFiRequestWithDetails & {
+    maxAmountWeiByToken?: unknown;
+    maxAmountsWeiByToken?: unknown;
+  };
+  const setFromMaybeMap = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    for (const [token, amountWei] of Object.entries(value)) {
+      if (!token || typeof amountWei !== "string") continue;
+      out[token.toLowerCase()] = amountWei;
+    }
+  };
+  setFromMaybeMap(withOptional.maxAmountWeiByToken);
+  setFromMaybeMap(withOptional.maxAmountsWeiByToken);
+  return out;
 }
 
 export default function RequestDetailPage() {
@@ -258,6 +310,8 @@ export default function RequestDetailPage() {
             onOpenChange={setOpenPostOffer}
             walletAddress={address}
             request={data}
+            offeredTokens={offeredTokensForRequest(data)}
+            maxAmountWeiByToken={maxAmountWeiByTokenForRequest(data)}
             onCreated={() => fetchRequest()}
           />
         </>

@@ -7,7 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { assertSupportedToken, deriveOfferId, parseAmount, postOfferTx, randomSalt } from "@/lib/infofi-contract";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  assertSupportedToken,
+  deriveOfferId,
+  formatAmount,
+  isEthToken,
+  parseAmount,
+  postOfferTx,
+  randomSalt,
+  tokenSymbol,
+} from "@/lib/infofi-contract";
 import type { InfoFiRequest } from "@/lib/infofi-types";
 import { friendlyTxError } from "@/lib/utils";
 
@@ -16,28 +26,53 @@ export function PostOfferDialog({
   onOpenChange,
   walletAddress,
   request,
+  offeredTokens,
+  maxAmountWeiByToken,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   walletAddress: Address | null;
   request: InfoFiRequest;
+  offeredTokens?: string[];
+  maxAmountWeiByToken?: Record<string, string>;
   onCreated?: (offerId: Hex) => void;
 }) {
+  const tokenOptions = React.useMemo(() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const push = (value: string | null | undefined) => {
+      if (!value || !value.trim()) return;
+      const token = value.toLowerCase();
+      if (seen.has(token)) return;
+      seen.add(token);
+      out.push(token);
+    };
+    push(request.paymentToken);
+    for (const token of offeredTokens || []) push(token);
+    return out;
+  }, [offeredTokens, request.paymentToken]);
+
   const [amount, setAmount] = React.useState("");
+  const [selectedToken, setSelectedToken] = React.useState(request.paymentToken.toLowerCase());
   const [etaMinutes, setEtaMinutes] = React.useState("30");
   const [proofType, setProofType] = React.useState("reputation-only");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  const activeToken = selectedToken || request.paymentToken.toLowerCase();
+  const maxAmountWei = maxAmountWeiByToken?.[activeToken] ?? (activeToken === request.paymentToken.toLowerCase() ? request.maxAmountWei : undefined);
+  const amountPlaceholder = maxAmountWei ? formatAmount(activeToken, maxAmountWei) : "";
+
   React.useEffect(() => {
     if (!open) return;
     setAmount("");
+    setSelectedToken(tokenOptions[0] || request.paymentToken.toLowerCase());
     setEtaMinutes("30");
     setProofType("reputation-only");
     setSubmitting(false);
     setError(null);
-  }, [open]);
+  }, [open, request.paymentToken, tokenOptions]);
 
   const canSubmit = Boolean(walletAddress && Number(amount) > 0 && Number(etaMinutes) > 0);
 
@@ -50,9 +85,9 @@ export function PostOfferDialog({
     setSubmitting(true);
     setError(null);
     try {
-      assertSupportedToken(request.paymentToken);
-      const amountWei = parseAmount(request.paymentToken, amount);
-      if (amountWei > BigInt(request.maxAmountWei)) {
+      assertSupportedToken(activeToken);
+      const amountWei = parseAmount(activeToken, amount);
+      if (maxAmountWei && amountWei > BigInt(maxAmountWei)) {
         throw new Error("Offer amount cannot exceed request max amount.");
       }
       const etaSeconds = Math.max(60, Math.floor(Number(etaMinutes) * 60));
@@ -94,27 +129,43 @@ export function PostOfferDialog({
         <div className="grid gap-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
+              <Label>Token</Label>
+              <Select value={activeToken} onValueChange={setSelectedToken}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {tokenOptions.map((token) => (
+                    <SelectItem key={token} value={token}>
+                      {tokenSymbol(token)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="offer-amount">Amount</Label>
               <Input
                 id="offer-amount"
                 type="number"
                 min="0"
-                step={request.paymentToken.toLowerCase() === "0x0000000000000000000000000000000000000000" ? "0.000001" : "0.01"}
+                step={isEthToken(activeToken) ? "0.000001" : "0.01"}
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
+                placeholder={amountPlaceholder}
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="offer-eta">ETA (minutes)</Label>
-              <Input
-                id="offer-eta"
-                type="number"
-                min="1"
-                step="1"
-                value={etaMinutes}
-                onChange={(event) => setEtaMinutes(event.target.value)}
-              />
-            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="offer-eta">ETA (minutes)</Label>
+            <Input
+              id="offer-eta"
+              type="number"
+              min="1"
+              step="1"
+              value={etaMinutes}
+              onChange={(event) => setEtaMinutes(event.target.value)}
+            />
           </div>
 
           <div className="grid gap-2">

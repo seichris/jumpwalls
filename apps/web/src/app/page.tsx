@@ -33,9 +33,9 @@ function sourceHost(url: string) {
 
 function statusVariant(status: string): "default" | "secondary" | "warning" | "success" {
   const upper = status.toUpperCase();
-  if (upper === "OPEN") return "default";
+  if (upper === "OPEN") return "success";
   if (upper === "HIRED") return "warning";
-  if (upper === "CLOSED") return "success";
+  if (upper === "CLOSED") return "default";
   return "secondary";
 }
 
@@ -135,9 +135,6 @@ export default function HomePage() {
             </>
           )}
 
-          <Button variant="outline" asChild>
-            <Link href="/request/new">New Request Page</Link>
-          </Button>
           <Button onClick={() => setOpenPostRequest(true)} disabled={!address || wrongChain}>
             Post Request
           </Button>
