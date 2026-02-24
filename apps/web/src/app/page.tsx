@@ -45,7 +45,7 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
 export default function HomePage() {
   const router = useRouter();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
-  const { address, chainId, hasProvider, activeWalletSource, setProviderPreference, connect, switchChain } = useWallet();
+  const { address, chainId, hasProvider, setProviderPreference, connect, switchChain } = useWallet();
   const { theme, setTheme, mounted } = useTheme();
   const privyEnabled = isPrivyFeatureEnabled();
 
@@ -122,21 +122,16 @@ export default function HomePage() {
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
           {!privyEnabled && hasProvider && !address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
           {address ? (
-            <>
-              <Badge variant="secondary" className="font-mono">
-                {privyEnabled ? "Privy" : activeWalletSource === "bridged" ? "Privy" : "Injected"} {shortHash(address)}
-              </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  const ok = await copyText(address);
-                  setCopyState(ok ? "Copied wallet address." : "Clipboard copy unavailable.");
-                }}
-              >
-                Copy
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const ok = await copyText(address);
+                setCopyState(ok ? "Copied wallet address." : "Clipboard copy unavailable.");
+              }}
+            >
+              Copy
+            </Button>
           ) : null}
           {wrongChain ? (
             <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>

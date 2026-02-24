@@ -219,7 +219,6 @@ export default function RequestDetailPage() {
         <div className="flex items-center gap-2">
           {privyEnabled ? <PrivyConnectWalletButton /> : null}
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
-          {address ? <Badge variant="secondary" className="font-mono">Privy {shortHash(address)}</Badge> : null}
           {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
           {privyEnabled ? (
             <PrivyFundWalletDialog
