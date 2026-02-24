@@ -175,5 +175,48 @@ contract InfoFiTest is Test {
         vm.prank(relayer);
         infoFi.refundWithAuthorization(jobId, address(usdc), payable(other), amount, nonce, deadline, sig);
     }
-}
 
+    function test_CounterOffer_PostOverMax_HireFailsUntilBudgetRaised() public {
+        uint256 maxWei = 1 ether;
+        uint256 overWei = 2 ether;
+
+        vm.startPrank(requester);
+        bytes32 requestId =
+            infoFi.postRequest("https://example.com/source", "Question", address(0), maxWei, bytes32("r-counter"));
+        vm.stopPrank();
+
+        // Consultant can post an over-budget offer.
+        vm.prank(consultant);
+        bytes32 offerId = infoFi.postOffer(requestId, overWei, 3600, "reputation-only", bytes32("o-counter"));
+
+        // Requester cannot hire until budget is raised.
+        vm.expectRevert(InfoFi.InvalidAmount.selector);
+        vm.prank(requester);
+        infoFi.hireOffer{value: overWei}(offerId);
+
+        // Only requester can raise max, and only upwards.
+        vm.expectRevert(InfoFi.Unauthorized.selector);
+        vm.prank(other);
+        infoFi.updateRequestMaxAmount(requestId, overWei);
+
+        vm.prank(requester);
+        infoFi.updateRequestMaxAmount(requestId, overWei);
+
+        // Now hire succeeds.
+        vm.prank(requester);
+        bytes32 jobId = infoFi.hireOffer{value: overWei}(offerId);
+        assertTrue(jobId != bytes32(0));
+    }
+
+    function test_UpdateRequestMaxAmount_CannotDecrease() public {
+        uint256 maxWei = 1 ether;
+
+        vm.prank(requester);
+        bytes32 requestId =
+            infoFi.postRequest("https://example.com/source2", "Question2", address(0), maxWei, bytes32("r-max"));
+
+        vm.expectRevert(InfoFi.InvalidAmount.selector);
+        vm.prank(requester);
+        infoFi.updateRequestMaxAmount(requestId, maxWei - 1);
+    }
+}

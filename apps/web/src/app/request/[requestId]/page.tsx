@@ -6,6 +6,7 @@ import * as React from "react";
 import type { Address, Hex } from "viem";
 
 import { PostOfferDialog } from "@/components/infofi/post-offer-dialog";
+import { UpdateRequestMaxDialog } from "@/components/infofi/update-request-max-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -96,6 +97,8 @@ export default function RequestDetailPage() {
   const [copyState, setCopyState] = React.useState<string | null>(null);
   const [hiringOfferId, setHiringOfferId] = React.useState<string | null>(null);
   const [openPostOffer, setOpenPostOffer] = React.useState(false);
+  const [openUpdateMax, setOpenUpdateMax] = React.useState(false);
+  const [suggestedNewMaxWei, setSuggestedNewMaxWei] = React.useState<string | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
 
@@ -150,6 +153,12 @@ export default function RequestDetailPage() {
     setActionError(null);
     setHiringOfferId(offer.offerId);
     try {
+      const overBudget = BigInt(offer.amountWei) > BigInt(data.maxAmountWei);
+      if (overBudget) {
+        setSuggestedNewMaxWei(offer.amountWei);
+        setOpenUpdateMax(true);
+        throw new Error("Offer exceeds request max. Increase budget first.");
+      }
       assertSupportedToken(data.paymentToken);
       if (isEthToken(data.paymentToken)) {
         await hireOfferEthTx(offer.offerId as Hex, BigInt(offer.amountWei));
@@ -244,6 +253,21 @@ export default function RequestDetailPage() {
               <p>Token: <span className="font-medium">{tokenSymbol(data.paymentToken)}</span></p>
               <p>Max: <span className="font-medium">{formatAmount(data.paymentToken, data.maxAmountWei)}</span></p>
             </div>
+            {isRequester && data.status.toUpperCase() === "OPEN" ? (
+              <div className="mt-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSuggestedNewMaxWei(null);
+                    setOpenUpdateMax(true);
+                  }}
+                  disabled={!address || wrongChain}
+                >
+                  Increase Budget
+                </Button>
+              </div>
+            ) : null}
             {data.job ? (
               <div className="mt-4">
                 <Button asChild>
@@ -277,27 +301,37 @@ export default function RequestDetailPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.offers.map((offer) => (
-                    <TableRow key={offer.offerId}>
-                      <TableCell className="font-mono text-xs">{shortHash(offer.offerId)}</TableCell>
-                      <TableCell className="font-mono text-xs">{shortHash(offer.consultant)}</TableCell>
-                      <TableCell className="text-right font-mono text-xs">{formatAmount(data.paymentToken, offer.amountWei)}</TableCell>
-                      <TableCell className="text-right text-xs">{Math.max(1, Math.floor(offer.etaSeconds / 60))}m</TableCell>
-                      <TableCell className="text-xs">{offer.proofType || "-"}</TableCell>
-                      <TableCell><Badge variant={statusVariant(offer.status)}>{offer.status}</Badge></TableCell>
-                      <TableCell className="text-right">
-                        {isRequester && data.status.toUpperCase() === "OPEN" && offer.status.toUpperCase() === "OPEN" ? (
-                          <Button
-                            size="sm"
-                            onClick={() => hireOffer(offer)}
-                            disabled={Boolean(hiringOfferId) || wrongChain}
-                          >
-                            {hiringOfferId === offer.offerId ? "Hiring..." : "Hire"}
-                          </Button>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  data.offers.map((offer) => {
+                    const overBudget = BigInt(offer.amountWei) > BigInt(data.maxAmountWei);
+                    return (
+                      <TableRow key={offer.offerId}>
+                        <TableCell className="font-mono text-xs">{shortHash(offer.offerId)}</TableCell>
+                        <TableCell className="font-mono text-xs">{shortHash(offer.consultant)}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {formatAmount(data.paymentToken, offer.amountWei)}
+                          {overBudget ? (
+                            <span className="ml-2 inline-flex rounded-md border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-800 dark:text-amber-300">
+                              Over max
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-right text-xs">{Math.max(1, Math.floor(offer.etaSeconds / 60))}m</TableCell>
+                        <TableCell className="text-xs">{offer.proofType || "-"}</TableCell>
+                        <TableCell><Badge variant={statusVariant(offer.status)}>{offer.status}</Badge></TableCell>
+                        <TableCell className="text-right">
+                          {isRequester && data.status.toUpperCase() === "OPEN" && offer.status.toUpperCase() === "OPEN" ? (
+                            <Button
+                              size="sm"
+                              onClick={() => hireOffer(offer)}
+                              disabled={Boolean(hiringOfferId) || wrongChain}
+                            >
+                              {hiringOfferId === offer.offerId ? "Hiring..." : "Hire"}
+                            </Button>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -313,6 +347,14 @@ export default function RequestDetailPage() {
             offeredTokens={offeredTokensForRequest(data)}
             maxAmountWeiByToken={maxAmountWeiByTokenForRequest(data)}
             onCreated={() => fetchRequest()}
+          />
+
+          <UpdateRequestMaxDialog
+            open={openUpdateMax}
+            onOpenChange={setOpenUpdateMax}
+            request={data}
+            suggestedNewMaxWei={suggestedNewMaxWei}
+            onUpdated={() => fetchRequest()}
           />
         </>
       ) : null}

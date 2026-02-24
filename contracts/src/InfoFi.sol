@@ -108,6 +108,7 @@ contract InfoFi {
         address token,
         uint256 amount
     );
+    event RequestMaxAmountUpdated(bytes32 indexed requestId, uint256 oldMaxAmount, uint256 newMaxAmount);
     event DigestDelivered(
         bytes32 indexed jobId,
         address indexed consultant,
@@ -194,7 +195,7 @@ contract InfoFi {
         Request storage req = requests[requestId];
         if (req.createdAt == 0) revert NotFound();
         if (req.status != RequestStatus.OPEN) revert InvalidState();
-        if (amount == 0 || amount > req.maxAmount) revert InvalidAmount();
+        if (amount == 0) revert InvalidAmount();
 
         offerId = computeOfferId(requestId, msg.sender, amount, etaSeconds, salt);
         if (offers[offerId].createdAt != 0) revert AlreadyExists();
@@ -210,6 +211,19 @@ contract InfoFi {
         });
 
         emit OfferPosted(offerId, requestId, msg.sender, amount, etaSeconds, proofType);
+    }
+
+    function updateRequestMaxAmount(bytes32 requestId, uint256 newMaxAmount) external {
+        Request storage req = requests[requestId];
+        if (req.createdAt == 0) revert NotFound();
+        if (req.status != RequestStatus.OPEN) revert InvalidState();
+        if (msg.sender != req.requester) revert Unauthorized();
+        if (newMaxAmount < req.maxAmount) revert InvalidAmount();
+
+        uint256 old = req.maxAmount;
+        if (newMaxAmount == old) return;
+        req.maxAmount = newMaxAmount;
+        emit RequestMaxAmountUpdated(requestId, old, newMaxAmount);
     }
 
     function hireOffer(bytes32 offerId) external payable returns (bytes32 jobId) {

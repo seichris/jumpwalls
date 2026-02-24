@@ -8,7 +8,7 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "format": "pnpm -r format",
-    "contracts:test": "forge test -q --root contracts",
+    "contracts:test": "forge test -q --root contracts --via-ir",
     "contracts:build": "forge build --root contracts",
     "contracts:anvil": "anvil",
     "contracts:deploy": "bash scripts/deploy.sh",

@@ -63,6 +63,16 @@ export function PostOfferDialog({
   const activeToken = selectedToken || request.paymentToken.toLowerCase();
   const maxAmountWei = maxAmountWeiByToken?.[activeToken] ?? (activeToken === request.paymentToken.toLowerCase() ? request.maxAmountWei : undefined);
   const amountPlaceholder = maxAmountWei ? formatAmount(activeToken, maxAmountWei) : "";
+  const overBudget =
+    Boolean(maxAmountWei) && Boolean(amount) && Number(amount) > 0
+      ? (() => {
+          try {
+            return parseAmount(activeToken, amount) > BigInt(maxAmountWei || "0");
+          } catch {
+            return false;
+          }
+        })()
+      : false;
 
   React.useEffect(() => {
     if (!open) return;
@@ -87,9 +97,6 @@ export function PostOfferDialog({
     try {
       assertSupportedToken(activeToken);
       const amountWei = parseAmount(activeToken, amount);
-      if (maxAmountWei && amountWei > BigInt(maxAmountWei)) {
-        throw new Error("Offer amount cannot exceed request max amount.");
-      }
       const etaSeconds = Math.max(60, Math.floor(Number(etaMinutes) * 60));
       const salt = randomSalt();
       const offerId = deriveOfferId({
@@ -179,6 +186,11 @@ export function PostOfferDialog({
           </div>
 
           {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p> : null}
+          {overBudget ? (
+            <p className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+              Counter-offer: amount exceeds the request max. The requester must increase budget before they can hire.
+            </p>
+          ) : null}
         </div>
 
         <DialogFooter>

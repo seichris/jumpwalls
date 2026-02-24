@@ -262,6 +262,22 @@ export async function postOfferTx(input: {
   return { hash, account };
 }
 
+export async function updateRequestMaxAmountTx(input: { requestId: Hex; newMaxAmountWei: bigint }) {
+  const { contractAddress, chain } = getConfig();
+  await ensureWalletChain(chain.id);
+  const publicClient = getPublicClient();
+  const { wallet, account } = await activeAccount();
+  const hash = await wallet.writeContract({
+    address: contractAddress,
+    abi: infoFiAbi,
+    functionName: "updateRequestMaxAmount",
+    args: [input.requestId, input.newMaxAmountWei],
+    account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash });
+  return { hash, account };
+}
+
 export async function hireOfferEthTx(offerId: Hex, amountWei: bigint) {
   const { contractAddress, chain } = getConfig();
   await ensureWalletChain(chain.id);

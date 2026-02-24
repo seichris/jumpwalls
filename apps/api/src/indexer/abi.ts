@@ -15,6 +15,7 @@ export const infoFiAbi = parseAbi([
   "event RequestPosted(bytes32 indexed requestId, address indexed requester, address indexed paymentToken, uint256 maxAmount, string sourceURI, string question)",
   "event OfferPosted(bytes32 indexed offerId, bytes32 indexed requestId, address indexed consultant, uint256 amount, uint64 etaSeconds, string proofType)",
   "event OfferHired(bytes32 indexed jobId, bytes32 indexed requestId, bytes32 indexed offerId, address requester, address consultant, address token, uint256 amount)",
+  "event RequestMaxAmountUpdated(bytes32 indexed requestId, uint256 oldMaxAmount, uint256 newMaxAmount)",
   "event DigestDelivered(bytes32 indexed jobId, address indexed consultant, bytes32 digestHash, string metadataURI, string proofTypeOrURI)",
   "event PaidOut(bytes32 indexed jobId, address indexed token, address indexed recipient, uint256 amount)",
   "event Refunded(bytes32 indexed jobId, address indexed token, address indexed funder, uint256 amount)",

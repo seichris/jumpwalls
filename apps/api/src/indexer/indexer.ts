@@ -633,6 +633,15 @@ async function handleInfoFiLog(
       });
       break;
     }
+    case "RequestMaxAmountUpdated": {
+      const requestId = (log.args.requestId as string).toLowerCase();
+      const newMaxAmountWei = (log.args.newMaxAmount as bigint).toString();
+      await prisma.infoFiRequest.updateMany({
+        where: { requestId },
+        data: { maxAmountWei: newMaxAmountWei }
+      });
+      break;
+    }
     case "DigestDelivered": {
       const jobId = (log.args.jobId as string).toLowerCase();
       const digestHash = (log.args.digestHash as string).toLowerCase();
