@@ -6,6 +6,7 @@ import * as React from "react";
 import type { Address, Hex } from "viem";
 
 import { PostOfferDialog } from "@/components/infofi/post-offer-dialog";
+import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
 import { UpdateRequestMaxDialog } from "@/components/infofi/update-request-max-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { assertSupportedToken, deriveJobId, formatAmount, hireOfferEthTx, hireOf
 import { copyText, logUiAction } from "@/lib/infofi-ux";
 import type { InfoFiOffer, InfoFiRequestWithDetails } from "@/lib/infofi-types";
 import { useWallet } from "@/lib/hooks/useWallet";
+import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { errorMessage, friendlyTxError } from "@/lib/utils";
 
 function shortHash(value: string) {
@@ -101,6 +103,9 @@ export default function RequestDetailPage() {
   const [suggestedNewMaxWei, setSuggestedNewMaxWei] = React.useState<string | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
+  const privyEnabled = isPrivyFeatureEnabled();
+  const privyChainSupported = isPrivyFundingSupportedChain(expectedChainId);
+  const privySupportedChainsLabel = Array.from(privyFundingSupportedChainIds()).join(", ");
 
   const fetchRequest = React.useCallback(async () => {
     if (!requestId) return;
@@ -192,6 +197,7 @@ export default function RequestDetailPage() {
         <div className="flex items-center gap-2">
           {!address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
           {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
+          {privyEnabled ? <PrivyFundWalletDialog walletAddress={address} expectedChainId={expectedChainId} /> : null}
           <Button variant="outline" onClick={() => fetchRequest()}>Refresh</Button>
           {data && data.status.toUpperCase() === "OPEN" ? (
             <Button onClick={() => setOpenPostOffer(true)} disabled={!address || wrongChain}>
@@ -205,6 +211,12 @@ export default function RequestDetailPage() {
       {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
       {lagWarning ? <p className="mb-3 rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">{lagWarning}</p> : null}
       {copyState ? <p className="mb-3 text-xs text-muted-foreground">{copyState}</p> : null}
+      {privyEnabled && !privyChainSupported ? (
+        <p className="mb-3 rounded-md border border-blue-400/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
+          Card funding via Privy is enabled for chain IDs {privySupportedChainsLabel}. Current app chain is{" "}
+          {expectedChainId}.
+        </p>
+      ) : null}
 
       {data ? (
         <>

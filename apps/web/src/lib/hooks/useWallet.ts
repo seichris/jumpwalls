@@ -1,25 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Address } from "viem";
-
-type Eip1193Provider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on?: (event: string, listener: (...args: unknown[]) => void) => void;
-  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
-};
-
-function getEthereum(): Eip1193Provider | null {
-  if (typeof window === "undefined") return null;
-  const maybe = (window as unknown as { ethereum?: Eip1193Provider }).ethereum;
-  return maybe ?? null;
-}
+import {
+  getBridgedWalletState,
+  getInjectedEthereum,
+  setWalletProviderPreference,
+  subscribeBridgedWalletState,
+} from "../wallet";
 
 export function useWallet() {
-  const [address, setAddress] = useState<Address | null>(null);
-  const [chainId, setChainId] = useState<number | null>(null);
-  const hasProvider = Boolean(getEthereum()?.request);
+  const [injectedAddress, setInjectedAddress] = useState<Address | null>(null);
+  const [injectedChainId, setInjectedChainId] = useState<number | null>(null);
+  const [bridgedAddress, setBridgedAddress] = useState<Address | null>(getBridgedWalletState().address);
+  const [bridgedChainId, setBridgedChainId] = useState<number | null>(getBridgedWalletState().chainId);
+  const [hasBridgedProvider, setHasBridgedProvider] = useState(Boolean(getBridgedWalletState().provider?.request));
+  const hasProvider = Boolean(getInjectedEthereum()?.request || hasBridgedProvider);
+
+  const address = injectedAddress ?? bridgedAddress;
+  const chainId = injectedAddress ? injectedChainId : bridgedChainId;
 
   useEffect(() => {
-    const eth = getEthereum();
+    const eth = getInjectedEthereum();
     if (!eth?.request) return;
 
     let cancelled = false;
@@ -30,11 +30,11 @@ export function useWallet() {
         if (cancelled) return;
         const asString = typeof cid === "string" ? cid : "";
         const parsed = Number.parseInt(asString, 16);
-        setChainId(Number.isFinite(parsed) ? parsed : null);
+        setInjectedChainId(Number.isFinite(parsed) ? parsed : null);
       })
       .catch(() => {
         if (cancelled) return;
-        setChainId(null);
+        setInjectedChainId(null);
       });
 
     eth
@@ -43,23 +43,23 @@ export function useWallet() {
         if (cancelled) return;
         const list = Array.isArray(accounts) ? accounts : [];
         const first = typeof list[0] === "string" ? (list[0] as Address) : null;
-        setAddress(first);
+        setInjectedAddress(first);
       })
       .catch(() => {
         if (cancelled) return;
-        setAddress(null);
+        setInjectedAddress(null);
       });
 
     const handleAccountsChanged = (accountsUnknown: unknown) => {
       const list = Array.isArray(accountsUnknown) ? accountsUnknown : [];
       const first = typeof list[0] === "string" ? (list[0] as Address) : null;
-      setAddress(first);
+      setInjectedAddress(first);
     };
 
     const handleChainChanged = (cidUnknown: unknown) => {
       const cid = typeof cidUnknown === "string" ? cidUnknown : "";
       const parsed = Number.parseInt(cid, 16);
-      setChainId(Number.isFinite(parsed) ? parsed : null);
+      setInjectedChainId(Number.isFinite(parsed) ? parsed : null);
     };
 
     eth.on?.("accountsChanged", handleAccountsChanged);
@@ -71,22 +71,45 @@ export function useWallet() {
     };
   }, []);
 
+  useEffect(() => {
+    return subscribeBridgedWalletState((state) => {
+      setBridgedAddress(state.address);
+      setBridgedChainId(state.chainId);
+      setHasBridgedProvider(Boolean(state.provider?.request));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (injectedAddress) {
+      setWalletProviderPreference("injected");
+      return;
+    }
+    if (bridgedAddress) {
+      setWalletProviderPreference("bridged");
+      return;
+    }
+    setWalletProviderPreference("injected");
+  }, [injectedAddress, bridgedAddress]);
+
   const connect = useCallback(async () => {
-    const eth = getEthereum();
+    const eth = getInjectedEthereum();
     if (!eth?.request) throw new Error("No injected wallet found");
     const accountsUnknown = await eth.request({ method: "eth_requestAccounts" });
     const accounts = Array.isArray(accountsUnknown) ? accountsUnknown : [];
     const next = (typeof accounts[0] === "string" ? (accounts[0] as Address) : null) as Address | null;
-    setAddress(next);
+    setInjectedAddress(next);
+    if (next) setWalletProviderPreference("injected");
     return next;
   }, []);
 
   const switchChain = useCallback(async (nextChainId: number) => {
-    const eth = getEthereum();
-    if (!eth?.request) throw new Error("No injected wallet found");
+    const injected = getInjectedEthereum();
+    const bridged = getBridgedWalletState().provider;
+    const eth = injectedAddress ? injected : bridged || injected;
+    if (!eth?.request) throw new Error("No wallet provider found");
     const hex = `0x${nextChainId.toString(16)}`;
     await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
-  }, []);
+  }, [injectedAddress]);
 
   return { address, chainId, hasProvider, connect, switchChain };
 }

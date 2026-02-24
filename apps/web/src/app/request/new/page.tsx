@@ -6,6 +6,7 @@ import * as React from "react";
 import type { Address } from "viem";
 import { parseEther, parseUnits } from "viem";
 
+import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { deriveRequestId, ETH_TOKEN, postRequestTx, randomSalt, usdcForChain } from "@/lib/infofi-contract";
 import { fullTextRisk, logUiAction, lowBudgetWarning } from "@/lib/infofi-ux";
 import { useWallet } from "@/lib/hooks/useWallet";
+import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { friendlyTxError } from "@/lib/utils";
 
 export default function NewRequestPage() {
@@ -31,6 +33,9 @@ export default function NewRequestPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
+  const privyEnabled = isPrivyFeatureEnabled();
+  const privyChainSupported = isPrivyFundingSupportedChain(expectedChainId);
+  const privySupportedChainsLabel = Array.from(privyFundingSupportedChainIds()).join(", ");
   const usdc = usdcForChain();
   const paymentToken = tokenMode === "ETH" ? ETH_TOKEN : usdc || ETH_TOKEN;
   const questionRisk = fullTextRisk(question);
@@ -100,6 +105,7 @@ export default function NewRequestPage() {
           {!hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
           {!address && hasProvider ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
           {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
+          {privyEnabled ? <PrivyFundWalletDialog walletAddress={address} expectedChainId={expectedChainId} /> : null}
         </div>
       </header>
 
@@ -162,6 +168,12 @@ export default function NewRequestPage() {
           {budgetWarning ? (
             <p className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
               {budgetWarning}
+            </p>
+          ) : null}
+          {privyEnabled && !privyChainSupported ? (
+            <p className="rounded-md border border-blue-400/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
+              Card funding via Privy is enabled for chain IDs {privySupportedChainsLabel}. Current app chain is{" "}
+              {expectedChainId}.
             </p>
           ) : null}
 
