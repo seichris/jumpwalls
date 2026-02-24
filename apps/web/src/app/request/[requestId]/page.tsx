@@ -11,7 +11,6 @@ import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dia
 import { UpdateRequestMaxDialog } from "@/components/infofi/update-request-max-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getRequestById } from "@/lib/api";
@@ -96,13 +95,7 @@ export default function RequestDetailPage() {
     address,
     chainId,
     hasProvider,
-    hasInjectedProvider,
-    injectedAddress,
-    bridgedAddress,
-    activeWalletSource,
-    providerPreference,
     setProviderPreference,
-    connect,
     switchChain,
   } = useWallet();
 
@@ -130,7 +123,11 @@ export default function RequestDetailPage() {
   const privyEnabled = isPrivyFeatureEnabled();
   const privyChainSupported = isPrivyFundingSupportedChain(expectedChainId);
   const privySupportedChainsLabel = Array.from(privyFundingSupportedChainIds()).join(", ");
-  const hasBothWalletSources = Boolean(injectedAddress && bridgedAddress);
+
+  React.useEffect(() => {
+    if (!privyEnabled) return;
+    setProviderPreference("bridged");
+  }, [privyEnabled, setProviderPreference]);
 
   const fetchRequest = React.useCallback(async () => {
     if (!requestId) return;
@@ -220,31 +217,9 @@ export default function RequestDetailPage() {
           <h1 className="text-2xl font-semibold">Request</h1>
         </div>
         <div className="flex items-center gap-2">
-          {!hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
           {privyEnabled ? <PrivyConnectWalletButton /> : null}
-          {!injectedAddress && hasInjectedProvider ? <Button onClick={() => connect()}>Connect Injected</Button> : null}
-          {hasBothWalletSources ? (
-            <Select
-              value={providerPreference}
-              onValueChange={(value) => {
-                setProviderPreference(value as "injected" | "bridged");
-                logUiAction("wallet_source_selected", { source: value });
-              }}
-            >
-              <SelectTrigger className="w-[220px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="injected">Injected ({shortHash(injectedAddress as string)})</SelectItem>
-                <SelectItem value="bridged">Privy ({shortHash(bridgedAddress as string)})</SelectItem>
-              </SelectContent>
-            </Select>
-          ) : null}
-          {address ? (
-            <Badge variant="secondary" className="font-mono">
-              {activeWalletSource === "bridged" ? "Privy" : "Injected"} {shortHash(address)}
-            </Badge>
-          ) : null}
+          {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
+          {address ? <Badge variant="secondary" className="font-mono">Privy {shortHash(address)}</Badge> : null}
           {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
           {privyEnabled ? (
             <PrivyFundWalletDialog

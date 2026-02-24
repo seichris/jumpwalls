@@ -6,6 +6,8 @@ import * as React from "react";
 import { Moon, RefreshCw, Sun } from "lucide-react";
 
 import { PostRequestDialog } from "@/components/infofi/post-request-dialog";
+import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
+import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +19,7 @@ import { copyText } from "@/lib/infofi-ux";
 import type { InfoFiRequest } from "@/lib/infofi-types";
 import { useTheme } from "@/lib/hooks/useTheme";
 import { useWallet } from "@/lib/hooks/useWallet";
+import { isPrivyFeatureEnabled } from "@/lib/privy";
 import { errorMessage } from "@/lib/utils";
 
 function shortHash(value: string) {
@@ -42,8 +45,9 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
 export default function HomePage() {
   const router = useRouter();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
-  const { address, chainId, hasProvider, connect, switchChain } = useWallet();
+  const { address, chainId, hasProvider, activeWalletSource, setProviderPreference, connect, switchChain } = useWallet();
   const { theme, setTheme, mounted } = useTheme();
+  const privyEnabled = isPrivyFeatureEnabled();
 
   const [requests, setRequests] = React.useState<InfoFiRequest[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -56,6 +60,11 @@ export default function HomePage() {
   const [copyState, setCopyState] = React.useState<string | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
+
+  React.useEffect(() => {
+    if (!privyEnabled) return;
+    setProviderPreference("bridged");
+  }, [privyEnabled, setProviderPreference]);
 
   const fetchData = React.useCallback(async () => {
     setLoading(true);
@@ -109,18 +118,13 @@ export default function HomePage() {
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
 
-          {!hasProvider ? (
-            <Badge variant="warning">No Wallet Provider</Badge>
-          ) : !address ? (
-            <Button onClick={() => connect()}>Connect Wallet</Button>
-          ) : wrongChain ? (
-            <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>
-              Switch To Chain {expectedChainId}
-            </Button>
-          ) : (
+          {privyEnabled ? <PrivyConnectWalletButton /> : null}
+          {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
+          {!privyEnabled && hasProvider && !address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
+          {address ? (
             <>
               <Badge variant="secondary" className="font-mono">
-                {shortHash(address)}
+                {privyEnabled ? "Privy" : activeWalletSource === "bridged" ? "Privy" : "Injected"} {shortHash(address)}
               </Badge>
               <Button
                 variant="outline"
@@ -133,7 +137,15 @@ export default function HomePage() {
                 Copy
               </Button>
             </>
-          )}
+          ) : null}
+          {wrongChain ? (
+            <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>
+              Switch To Chain {expectedChainId}
+            </Button>
+          ) : null}
+          {privyEnabled ? (
+            <PrivyFundWalletDialog walletAddress={address} walletChainId={chainId} expectedChainId={expectedChainId} />
+          ) : null}
 
           <Button onClick={() => setOpenPostRequest(true)} disabled={!address || wrongChain}>
             Post Request
