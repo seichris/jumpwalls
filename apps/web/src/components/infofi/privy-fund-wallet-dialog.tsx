@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { logUiAction } from "@/lib/infofi-ux";
-import { defaultPrivyFundingAmountUsd, isPrivyFeatureEnabled, isPrivyFundingSupportedChain } from "@/lib/privy";
+import { defaultPrivyFundingAmountUsd, isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { buildPrivyFundingOptions, classifyFundingError, isPositiveNumberString, type FundingErrorCode } from "@/lib/privy-funding";
 import { errorMessage } from "@/lib/utils";
 import {
@@ -54,6 +54,7 @@ export function PrivyFundWalletDialog({
 }) {
   const privyEnabled = isPrivyFeatureEnabled();
   const chainSupported = isPrivyFundingSupportedChain(expectedChainId);
+  const supportedChainsLabel = Array.from(privyFundingSupportedChainIds()).join(", ");
   const { ready, authenticated, login } = usePrivy();
   const { wallets } = useWallets();
   const { fundWallet } = useFundWallet({
@@ -90,7 +91,7 @@ export function PrivyFundWalletDialog({
 
   if (!privyEnabled) return null;
 
-  const disabled = !chainSupported || submitting || walletChainMismatch;
+  const disabled = submitting || walletChainMismatch;
 
   async function readBalancesWithRetry(address: Address, before: WalletBalanceSnapshot | null) {
     let latest: WalletBalanceSnapshot | null = null;
@@ -302,6 +303,12 @@ export function PrivyFundWalletDialog({
             <p className="text-xs text-muted-foreground">
               Funding is processed by Privy onramp providers. Settlement time may vary by payment method.
             </p>
+            {!chainSupported ? (
+              <p className="rounded-md border border-blue-400/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
+                Preview mode: card funding is configured for chain IDs {supportedChainsLabel}. Current app chain is{" "}
+                {expectedChainId}.
+              </p>
+            ) : null}
             {walletChainMismatch ? (
               <p className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
                 Wallet is on chain {walletChainId}. Switch to {expectedChainId} before funding.
