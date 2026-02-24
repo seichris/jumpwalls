@@ -1,4 +1,5 @@
 import { keccak256, stringToHex, concatBytes, toBytes } from "viem";
+export { infoFiAbi } from "./infofiAbi";
 
 export const USDC = {
   // Mainnet

@@ -1,0 +1,30 @@
+# InfoFi Chrome Extension
+
+This extension provides:
+
+- requester flow from popup (`postRequest`)
+- offerer discovery from open requests + local browser-history domain matches
+- extension badge count for matched opportunities
+- packaged toolbar/store icons (`16`, `32`, `48`, `128`)
+
+## Build
+
+```bash
+pnpm -C apps/chrome-extension build
+```
+
+Then load `apps/chrome-extension/dist` via `chrome://extensions` -> **Load unpacked**.
+
+## Tests
+
+```bash
+pnpm -C apps/chrome-extension test
+```
+
+## Configure
+
+1. Open extension options.
+2. Set `API URL` (e.g. `http://localhost:8787`).
+3. Enable history matching (grants `history` permission).
+
+The popup uses the active tab's injected wallet provider (`window.ethereum`) to sign transactions.

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>InfoFi Helper Settings</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="panel-header">
+        <div class="brand">
+          <img src="./assets/icons/icon-32.png" alt="" width="22" height="22" />
+          <h1>InfoFi Settings</h1>
+        </div>
+      </header>
+
+      <form id="settings-form" class="form">
+        <label>
+          API URL
+          <input id="api-url-input" name="apiUrl" required />
+        </label>
+        <label class="checkbox">
+          <input id="history-enabled-input" name="historyEnabled" type="checkbox" />
+          Enable history matching
+        </label>
+        <label>
+          History lookback (days)
+          <input id="history-lookback-input" name="historyLookbackDays" type="number" min="1" max="365" required />
+        </label>
+        <button id="save-settings-btn" type="submit">Save Settings</button>
+      </form>
+
+      <section class="card">
+        <p id="contract-label" class="mono">Contract info unavailable.</p>
+      </section>
+
+      <pre id="settings-result" class="result hidden"></pre>
+    </main>
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

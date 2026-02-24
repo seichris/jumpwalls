@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>InfoFi Helper</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="panel-header">
+        <div class="brand">
+          <img src="./assets/icons/icon-32.png" alt="" width="22" height="22" />
+          <h1>InfoFi Helper</h1>
+        </div>
+        <button id="refresh-state-btn" type="button" class="secondary">Refresh</button>
+      </header>
+
+      <section class="card">
+        <p id="network-label" class="mono">Loading network...</p>
+        <p id="api-label" class="mono subtle"></p>
+      </section>
+
+      <nav class="tabs">
+        <button id="tab-requester-btn" type="button" class="tab active">Requester</button>
+        <button id="tab-offerer-btn" type="button" class="tab">Offerer</button>
+      </nav>
+
+      <section id="tab-requester" class="tab-panel active">
+        <p class="section-caption">Post a request from this browser context.</p>
+        <form id="post-request-form" class="form">
+          <label>
+            Source URI
+            <input id="source-uri-input" name="sourceURI" required />
+          </label>
+          <label>
+            Question
+            <textarea id="question-input" name="question" rows="3" required></textarea>
+          </label>
+          <label>
+            Payment Token
+            <input id="payment-token-input" name="paymentToken" placeholder="ETH or 0x..." value="ETH" required />
+          </label>
+          <label>
+            Max Amount (wei)
+            <input id="max-amount-input" name="maxAmountWei" inputmode="numeric" required />
+          </label>
+          <label>
+            Salt (optional bytes32)
+            <input id="request-salt-input" name="salt" placeholder="0x..." />
+          </label>
+          <button id="post-request-btn" type="submit">Post Request</button>
+        </form>
+        <pre id="request-result" class="result hidden"></pre>
+      </section>
+
+      <section id="tab-offerer" class="tab-panel">
+        <p class="section-caption">Open requests matched to your recent browsing domains.</p>
+        <section class="card">
+          <p id="match-summary">Matched requests: 0</p>
+          <p id="open-summary" class="subtle">Open requests: 0</p>
+          <ul id="matched-list" class="list"></ul>
+        </section>
+
+        <form id="post-offer-form" class="form">
+          <label>
+            Request
+            <select id="offer-request-id-select" name="requestId" required></select>
+          </label>
+          <label>
+            Offer Amount (wei)
+            <input id="offer-amount-input" name="amountWei" inputmode="numeric" required />
+          </label>
+          <label>
+            ETA (seconds)
+            <input id="offer-eta-input" name="etaSeconds" inputmode="numeric" required />
+          </label>
+          <label>
+            Proof Type
+            <input id="offer-proof-input" name="proofType" value="history-match" required />
+          </label>
+          <label>
+            Salt (optional bytes32)
+            <input id="offer-salt-input" name="salt" placeholder="0x..." />
+          </label>
+          <button id="post-offer-btn" type="submit">Post Offer</button>
+        </form>
+        <pre id="offer-result" class="result hidden"></pre>
+      </section>
+
+      <footer class="panel-footer">
+        <a href="#" id="open-options-link">Settings</a>
+      </footer>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

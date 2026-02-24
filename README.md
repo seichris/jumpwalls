@@ -55,6 +55,7 @@ AI agents: Access via CLI. See [AGENTS.md](AGENTS.md).
 ### High-level overview
 - On-chain: `contracts/` holds the escrow + authorization logic.
 - Off-chain: `apps/api/` indexes contract events + provides GitHub-based authorization endpoints; `apps/web/` is the human UI.
+- Browser extension: `apps/chrome-extension/` adds requester posting and offerer history-match discovery from the toolbar popup.
 - Automation: the API can sync GitHub labels/comments when it sees on-chain events (when configured).
 
 ### Tech stack constraints
@@ -83,6 +84,10 @@ apps/web/
   src/app/            # Next.js routes/pages
   src/components/     # UI + feature components
   src/lib/            # Client helpers/hooks
+
+apps/chrome-extension/
+  src/                # MV3 background/content/popup/options scripts
+  manifest.json       # Extension permissions + entry points
 
 packages/shared/src/  # Shared helpers (repoHash/bountyId, addresses)
 scripts-for-ai-agents/# CLI agent scripts (cast/curl/jq/gh)
