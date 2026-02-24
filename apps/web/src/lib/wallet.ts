@@ -13,7 +13,7 @@ type BridgedWalletState = {
   provider: Eip1193Provider | null;
 };
 
-type WalletProviderPreference = "injected" | "bridged";
+export type WalletProviderPreference = "injected" | "bridged";
 
 let bridgedWalletState: BridgedWalletState = {
   address: null,
@@ -22,6 +22,7 @@ let bridgedWalletState: BridgedWalletState = {
 };
 let walletProviderPreference: WalletProviderPreference = "injected";
 const bridgedWalletSubscribers = new Set<(state: BridgedWalletState) => void>();
+const walletProviderPreferenceSubscribers = new Set<(next: WalletProviderPreference) => void>();
 
 export function getInjectedEthereum(): Eip1193Provider | null {
   if (typeof window === "undefined") return null;
@@ -49,7 +50,23 @@ export function subscribeBridgedWalletState(subscriber: (state: BridgedWalletSta
 }
 
 export function setWalletProviderPreference(next: WalletProviderPreference) {
+  if (walletProviderPreference === next) return;
   walletProviderPreference = next;
+  for (const subscriber of walletProviderPreferenceSubscribers) {
+    subscriber(walletProviderPreference);
+  }
+}
+
+export function getWalletProviderPreference() {
+  return walletProviderPreference;
+}
+
+export function subscribeWalletProviderPreference(subscriber: (next: WalletProviderPreference) => void) {
+  walletProviderPreferenceSubscribers.add(subscriber);
+  subscriber(walletProviderPreference);
+  return () => {
+    walletProviderPreferenceSubscribers.delete(subscriber);
+  };
 }
 
 function getEthereum(): Eip1193Provider | null {

@@ -6,10 +6,12 @@ import * as React from "react";
 import type { Address, Hex } from "viem";
 
 import { PostOfferDialog } from "@/components/infofi/post-offer-dialog";
+import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
 import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
 import { UpdateRequestMaxDialog } from "@/components/infofi/update-request-max-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getRequestById } from "@/lib/api";
@@ -19,6 +21,7 @@ import type { InfoFiOffer, InfoFiRequestWithDetails } from "@/lib/infofi-types";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { errorMessage, friendlyTxError } from "@/lib/utils";
+import { canHireOfferWithBalance, formatWalletFundingSummary } from "@/lib/wallet-balance";
 
 function shortHash(value: string) {
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
@@ -89,7 +92,19 @@ export default function RequestDetailPage() {
   const router = useRouter();
   const requestId = (params?.requestId || "").toLowerCase();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
-  const { address, chainId, connect, switchChain } = useWallet();
+  const {
+    address,
+    chainId,
+    hasProvider,
+    hasInjectedProvider,
+    injectedAddress,
+    bridgedAddress,
+    activeWalletSource,
+    providerPreference,
+    setProviderPreference,
+    connect,
+    switchChain,
+  } = useWallet();
 
   const [data, setData] = React.useState<InfoFiRequestWithDetails | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -101,11 +116,21 @@ export default function RequestDetailPage() {
   const [openPostOffer, setOpenPostOffer] = React.useState(false);
   const [openUpdateMax, setOpenUpdateMax] = React.useState(false);
   const [suggestedNewMaxWei, setSuggestedNewMaxWei] = React.useState<string | null>(null);
+  const [fundingFeedback, setFundingFeedback] = React.useState<{
+    status: "completed" | "cancelled" | "error";
+    summary: string;
+    canHire: boolean;
+    lowestOpenOfferLabel: string | null;
+    tokenSymbolLabel: string | null;
+    errorCode?: string;
+  } | null>(null);
+  const offersSectionRef = React.useRef<HTMLElement | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
   const privyEnabled = isPrivyFeatureEnabled();
   const privyChainSupported = isPrivyFundingSupportedChain(expectedChainId);
   const privySupportedChainsLabel = Array.from(privyFundingSupportedChainIds()).join(", ");
+  const hasBothWalletSources = Boolean(injectedAddress && bridgedAddress);
 
   const fetchRequest = React.useCallback(async () => {
     if (!requestId) return;
@@ -195,9 +220,76 @@ export default function RequestDetailPage() {
           <h1 className="text-2xl font-semibold">Request</h1>
         </div>
         <div className="flex items-center gap-2">
-          {!address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
+          {!hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
+          {privyEnabled ? <PrivyConnectWalletButton /> : null}
+          {!injectedAddress && hasInjectedProvider ? <Button onClick={() => connect()}>Connect Injected</Button> : null}
+          {hasBothWalletSources ? (
+            <Select
+              value={providerPreference}
+              onValueChange={(value) => {
+                setProviderPreference(value as "injected" | "bridged");
+                logUiAction("wallet_source_selected", { source: value });
+              }}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="injected">Injected ({shortHash(injectedAddress as string)})</SelectItem>
+                <SelectItem value="bridged">Privy ({shortHash(bridgedAddress as string)})</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
+          {address ? (
+            <Badge variant="secondary" className="font-mono">
+              {activeWalletSource === "bridged" ? "Privy" : "Injected"} {shortHash(address)}
+            </Badge>
+          ) : null}
           {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
-          {privyEnabled ? <PrivyFundWalletDialog walletAddress={address} expectedChainId={expectedChainId} /> : null}
+          {privyEnabled ? (
+            <PrivyFundWalletDialog
+              walletAddress={address}
+              walletChainId={chainId}
+              expectedChainId={expectedChainId}
+              onFundingOutcome={(outcome) => {
+                if (!data) return;
+                if (outcome.status === "error") {
+                  setFundingFeedback({
+                    status: "error",
+                    summary: "Balance check unavailable",
+                    canHire: false,
+                    lowestOpenOfferLabel: null,
+                    tokenSymbolLabel: null,
+                    errorCode: outcome.errorCode,
+                  });
+                  return;
+                }
+
+                const openOffers = data.offers
+                  .filter((offer) => offer.status.toUpperCase() === "OPEN")
+                  .map((offer) => ({ ...offer, amountWeiBigInt: BigInt(offer.amountWei) }));
+                const affordable = openOffers.some((offer) =>
+                  canHireOfferWithBalance({
+                    snapshot: outcome.balancesAfter,
+                    paymentToken: data.paymentToken,
+                    offerAmountWei: offer.amountWeiBigInt,
+                  })
+                );
+                const lowestOpenOffer = openOffers.reduce<bigint | null>((current, next) => {
+                  if (current === null) return next.amountWeiBigInt;
+                  return next.amountWeiBigInt < current ? next.amountWeiBigInt : current;
+                }, null);
+
+                setFundingFeedback({
+                  status: outcome.status,
+                  summary: formatWalletFundingSummary(outcome.balancesAfter),
+                  canHire: affordable,
+                  lowestOpenOfferLabel: lowestOpenOffer === null ? null : formatAmount(data.paymentToken, lowestOpenOffer),
+                  tokenSymbolLabel: tokenSymbol(data.paymentToken),
+                });
+              }}
+            />
+          ) : null}
           <Button variant="outline" onClick={() => fetchRequest()}>Refresh</Button>
           {data && data.status.toUpperCase() === "OPEN" ? (
             <Button onClick={() => setOpenPostOffer(true)} disabled={!address || wrongChain}>
@@ -211,6 +303,37 @@ export default function RequestDetailPage() {
       {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
       {lagWarning ? <p className="mb-3 rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">{lagWarning}</p> : null}
       {copyState ? <p className="mb-3 text-xs text-muted-foreground">{copyState}</p> : null}
+      {fundingFeedback ? (
+        <div className="mb-3 rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-900 dark:text-emerald-300">
+          {fundingFeedback.status === "error" ? (
+            <p>Funding flow finished with an error{fundingFeedback.errorCode ? ` (${fundingFeedback.errorCode})` : ""}.</p>
+          ) : (
+            <>
+              <p>
+                Funding flow {fundingFeedback.status}. On-chain wallet balance:{" "}
+                <span className="font-mono">{fundingFeedback.summary}</span>.
+              </p>
+              {fundingFeedback.canHire ? (
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      offersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                  >
+                    You Can Now Hire
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-1">
+                  Current balance cannot hire the lowest open offer
+                  {fundingFeedback.lowestOpenOfferLabel ? ` (${fundingFeedback.lowestOpenOfferLabel} ${fundingFeedback.tokenSymbolLabel})` : ""}.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      ) : null}
       {privyEnabled && !privyChainSupported ? (
         <p className="mb-3 rounded-md border border-blue-400/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
           Card funding via Privy is enabled for chain IDs {privySupportedChainsLabel}. Current app chain is{" "}
@@ -289,7 +412,7 @@ export default function RequestDetailPage() {
             ) : null}
           </section>
 
-          <section className="mt-6 rounded-lg border">
+          <section ref={offersSectionRef} className="mt-6 rounded-lg border">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <h2 className="text-sm font-semibold">Offers ({data.offers.length})</h2>
             </div>

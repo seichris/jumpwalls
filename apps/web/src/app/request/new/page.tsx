@@ -7,6 +7,7 @@ import type { Address } from "viem";
 import { parseEther, parseUnits } from "viem";
 
 import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
+import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,11 +18,28 @@ import { fullTextRisk, logUiAction, lowBudgetWarning } from "@/lib/infofi-ux";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { friendlyTxError } from "@/lib/utils";
+import { canPostRequestWithBalance, formatWalletFundingSummary } from "@/lib/wallet-balance";
+
+function shortHash(value: string) {
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
 
 export default function NewRequestPage() {
   const router = useRouter();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
-  const { address, chainId, hasProvider, connect, switchChain } = useWallet();
+  const {
+    address,
+    chainId,
+    hasProvider,
+    hasInjectedProvider,
+    injectedAddress,
+    bridgedAddress,
+    activeWalletSource,
+    providerPreference,
+    setProviderPreference,
+    connect,
+    switchChain,
+  } = useWallet();
 
   const [sourceURI, setSourceURI] = React.useState("");
   const [question, setQuestion] = React.useState("");
@@ -31,6 +49,12 @@ export default function NewRequestPage() {
   const [saltInput, setSaltInput] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [fundingFeedback, setFundingFeedback] = React.useState<{
+    status: "completed" | "cancelled" | "error";
+    summary: string;
+    canPost: boolean;
+    errorCode?: string;
+  } | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
   const privyEnabled = isPrivyFeatureEnabled();
@@ -42,6 +66,7 @@ export default function NewRequestPage() {
   const budgetWarning = lowBudgetWarning(paymentToken, maxAmount);
 
   const canSubmit = Boolean(address && sourceURI.trim() && question.trim() && Number(maxAmount) > 0 && !wrongChain);
+  const hasBothWalletSources = Boolean(injectedAddress && bridgedAddress);
 
   async function submit() {
     if (!address) {
@@ -103,9 +128,55 @@ export default function NewRequestPage() {
         </div>
         <div className="flex items-center gap-2">
           {!hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
-          {!address && hasProvider ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
+          {privyEnabled ? <PrivyConnectWalletButton /> : null}
+          {!injectedAddress && hasInjectedProvider ? <Button onClick={() => connect()}>Connect Injected</Button> : null}
+          {hasBothWalletSources ? (
+            <Select
+              value={providerPreference}
+              onValueChange={(value) => {
+                setProviderPreference(value as "injected" | "bridged");
+                logUiAction("wallet_source_selected", { source: value });
+              }}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="injected">Injected ({shortHash(injectedAddress as string)})</SelectItem>
+                <SelectItem value="bridged">Privy ({shortHash(bridgedAddress as string)})</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
+          {address ? (
+            <Badge variant="secondary" className="font-mono">
+              {activeWalletSource === "bridged" ? "Privy" : "Injected"} {shortHash(address)}
+            </Badge>
+          ) : null}
           {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
-          {privyEnabled ? <PrivyFundWalletDialog walletAddress={address} expectedChainId={expectedChainId} /> : null}
+          {privyEnabled ? (
+            <PrivyFundWalletDialog
+              walletAddress={address}
+              walletChainId={chainId}
+              expectedChainId={expectedChainId}
+              onFundingOutcome={(outcome) => {
+                if (outcome.status === "error") {
+                  setFundingFeedback({
+                    status: "error",
+                    summary: "Balance check unavailable",
+                    canPost: false,
+                    errorCode: outcome.errorCode,
+                  });
+                  return;
+                }
+                const canPost = canPostRequestWithBalance(outcome.balancesAfter);
+                setFundingFeedback({
+                  status: outcome.status,
+                  summary: formatWalletFundingSummary(outcome.balancesAfter),
+                  canPost,
+                });
+              }}
+            />
+          ) : null}
         </div>
       </header>
 
@@ -169,6 +240,28 @@ export default function NewRequestPage() {
             <p className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
               {budgetWarning}
             </p>
+          ) : null}
+          {fundingFeedback ? (
+            <div className="rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-900 dark:text-emerald-300">
+              {fundingFeedback.status === "error" ? (
+                <p>Funding flow finished with an error{fundingFeedback.errorCode ? ` (${fundingFeedback.errorCode})` : ""}.</p>
+              ) : (
+                <>
+                  <p>
+                    Funding flow {fundingFeedback.status}. On-chain wallet balance: <span className="font-mono">{fundingFeedback.summary}</span>.
+                  </p>
+                  {fundingFeedback.canPost ? (
+                    <div className="mt-2">
+                      <Button size="sm" onClick={submit} disabled={!canSubmit || submitting}>
+                        You Can Now Post Request
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="mt-1">Balance is still low for gas on this chain. You may need to fund more before posting.</p>
+                  )}
+                </>
+              )}
+            </div>
           ) : null}
           {privyEnabled && !privyChainSupported ? (
             <p className="rounded-md border border-blue-400/40 bg-blue-500/10 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">

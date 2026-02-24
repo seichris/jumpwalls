@@ -3,7 +3,10 @@ import type { Address } from "viem";
 import {
   getBridgedWalletState,
   getInjectedEthereum,
+  getWalletProviderPreference,
+  type WalletProviderPreference,
   setWalletProviderPreference,
+  subscribeWalletProviderPreference,
   subscribeBridgedWalletState,
 } from "../wallet";
 
@@ -12,11 +15,27 @@ export function useWallet() {
   const [injectedChainId, setInjectedChainId] = useState<number | null>(null);
   const [bridgedAddress, setBridgedAddress] = useState<Address | null>(getBridgedWalletState().address);
   const [bridgedChainId, setBridgedChainId] = useState<number | null>(getBridgedWalletState().chainId);
+  const [providerPreference, setProviderPreferenceState] = useState<WalletProviderPreference>(getWalletProviderPreference());
+  const hasInjectedProvider = Boolean(getInjectedEthereum()?.request);
   const [hasBridgedProvider, setHasBridgedProvider] = useState(Boolean(getBridgedWalletState().provider?.request));
-  const hasProvider = Boolean(getInjectedEthereum()?.request || hasBridgedProvider);
+  const hasProvider = hasInjectedProvider || hasBridgedProvider;
 
-  const address = injectedAddress ?? bridgedAddress;
-  const chainId = injectedAddress ? injectedChainId : bridgedChainId;
+  const activeWalletSource =
+    providerPreference === "injected"
+      ? injectedAddress
+        ? "injected"
+        : bridgedAddress
+          ? "bridged"
+          : null
+      : bridgedAddress
+        ? "bridged"
+        : injectedAddress
+          ? "injected"
+          : null;
+
+  const address = activeWalletSource === "injected" ? injectedAddress : activeWalletSource === "bridged" ? bridgedAddress : null;
+  const chainId =
+    activeWalletSource === "injected" ? injectedChainId : activeWalletSource === "bridged" ? bridgedChainId : null;
 
   useEffect(() => {
     const eth = getInjectedEthereum();
@@ -80,16 +99,35 @@ export function useWallet() {
   }, []);
 
   useEffect(() => {
-    if (injectedAddress) {
-      setWalletProviderPreference("injected");
-      return;
-    }
-    if (bridgedAddress) {
+    return subscribeWalletProviderPreference((next) => {
+      setProviderPreferenceState(next);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (providerPreference === "injected" && injectedAddress) return;
+    if (providerPreference === "bridged" && bridgedAddress) return;
+
+    if (providerPreference === "injected" && bridgedAddress) {
       setWalletProviderPreference("bridged");
       return;
     }
-    setWalletProviderPreference("injected");
-  }, [injectedAddress, bridgedAddress]);
+    if (providerPreference === "bridged" && injectedAddress) {
+      setWalletProviderPreference("injected");
+      return;
+    }
+
+    if (!injectedAddress && !bridgedAddress) {
+      if (hasInjectedProvider) {
+        setWalletProviderPreference("injected");
+        return;
+      }
+      if (hasBridgedProvider) {
+        setWalletProviderPreference("bridged");
+      }
+      return;
+    }
+  }, [bridgedAddress, hasBridgedProvider, hasInjectedProvider, injectedAddress, providerPreference]);
 
   const connect = useCallback(async () => {
     const eth = getInjectedEthereum();
@@ -102,14 +140,38 @@ export function useWallet() {
     return next;
   }, []);
 
+  const setProviderPreference = useCallback((next: WalletProviderPreference) => {
+    setWalletProviderPreference(next);
+  }, []);
+
   const switchChain = useCallback(async (nextChainId: number) => {
     const injected = getInjectedEthereum();
     const bridged = getBridgedWalletState().provider;
-    const eth = injectedAddress ? injected : bridged || injected;
+    const eth =
+      activeWalletSource === "bridged"
+        ? bridged || injected
+        : activeWalletSource === "injected"
+          ? injected || bridged
+          : injected || bridged;
     if (!eth?.request) throw new Error("No wallet provider found");
     const hex = `0x${nextChainId.toString(16)}`;
     await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
-  }, [injectedAddress]);
+  }, [activeWalletSource]);
 
-  return { address, chainId, hasProvider, connect, switchChain };
+  return {
+    address,
+    chainId,
+    hasProvider,
+    hasInjectedProvider,
+    hasBridgedProvider,
+    injectedAddress,
+    injectedChainId,
+    bridgedAddress,
+    bridgedChainId,
+    activeWalletSource,
+    providerPreference,
+    setProviderPreference,
+    connect,
+    switchChain,
+  };
 }

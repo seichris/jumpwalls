@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
     "format": "prettier -w ."
   },
   "dependencies": {
@@ -42,6 +43,7 @@
     "eslint-config-next": "16.1.6",
     "prettier": "^3.4.2",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
