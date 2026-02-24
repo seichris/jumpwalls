@@ -15,7 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getRequests } from "@/lib/api";
 import { formatAmount, tokenSymbol } from "@/lib/infofi-contract";
-import { copyText } from "@/lib/infofi-ux";
 import type { InfoFiRequest } from "@/lib/infofi-types";
 import { useTheme } from "@/lib/hooks/useTheme";
 import { useWallet } from "@/lib/hooks/useWallet";
@@ -57,7 +56,6 @@ export default function HomePage() {
   const [tokenFilter, setTokenFilter] = React.useState("ALL");
   const [requesterFilter, setRequesterFilter] = React.useState("");
   const [sourceFilter, setSourceFilter] = React.useState("");
-  const [copyState, setCopyState] = React.useState<string | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
 
@@ -121,18 +119,6 @@ export default function HomePage() {
           {privyEnabled ? <PrivyConnectWalletButton /> : null}
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
           {!privyEnabled && hasProvider && !address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
-          {address ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                const ok = await copyText(address);
-                setCopyState(ok ? "Copied wallet address." : "Clipboard copy unavailable.");
-              }}
-            >
-              Copy
-            </Button>
-          ) : null}
           {wrongChain ? (
             <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>
               Switch To Chain {expectedChainId}
@@ -186,7 +172,6 @@ export default function HomePage() {
       </section>
 
       {error ? <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
-      {copyState ? <p className="mb-4 text-xs text-muted-foreground">{copyState}</p> : null}
 
       <section className="rounded-lg border">
         <Table>
