@@ -1,7 +1,0 @@
-interface:
-  display_name: "InfoFi (CLI)"
-  short_description: "Run InfoFi flows via CLI"
-  default_prompt: "Use $infofi-cli to run the InfoFi flow (request → offer → hire → deliver → settle → rate) from the terminal."
-
-policy:
-  allow_implicit_invocation: true
