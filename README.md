@@ -21,6 +21,14 @@ InfoFi v0 assumptions:
 - Fair-use review: API computes a risk report on `POST /digests` and blocks high-risk submissions by default (`FAIR_USE_ENFORCEMENT_MODE=block`)
 - Payments: ETH + USDC (ERC-20)
 
+Fair-use review (MVP):
+
+- Every `POST /digests` request is scored by automated heuristics (quote ratio, long verbatim spans, substitution/full-text cues, citation signals).
+- API returns a verdict: `allow`, `warn`, or `block`, and stores the full report on `InfoFiDigest` (`fairUse*` fields).
+- Enforcement is controlled by `FAIR_USE_ENFORCEMENT_MODE`: `off`, `warn`, or `block` (default behavior is `block` when unset).
+- In `block` mode, high-risk submissions return HTTP `422` and are not stored.
+- This is a risk-screening guardrail, not a legal determination of fair use.
+
 Quick start (InfoFi mode):
 
 1. Deploy InfoFi:
