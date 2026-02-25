@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import type { Address, Hex } from "viem";
 
+import { BrandLockIcon } from "@/components/infofi/brand-lock-icon";
 import { PostOfferDialog } from "@/components/infofi/post-offer-dialog";
 import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
 import { UpdateRequestMaxDialog } from "@/components/infofi/update-request-max-dialog";
@@ -213,6 +214,7 @@ export default function RequestDetailPage() {
           <Button variant="outline" asChild>
             <Link href="/">Back</Link>
           </Button>
+          <BrandLockIcon className="size-6 text-primary" />
           <h1 className="text-2xl font-semibold">Request</h1>
         </div>
         <div className="flex items-center gap-2">

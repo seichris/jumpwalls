@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import * as React from "react";
 import { isAddress, type Address, type Hex } from "viem";
 
+import { BrandLockIcon } from "@/components/infofi/brand-lock-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -383,6 +384,7 @@ export default function JobDetailPage() {
           <Button variant="outline" asChild>
             <Link href="/">Back</Link>
           </Button>
+          <BrandLockIcon className="size-6 text-primary" />
           <h1 className="text-2xl font-semibold">Job</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">

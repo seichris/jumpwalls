@@ -25,6 +25,13 @@ export const metadata: Metadata = {
   title: "InfoFi",
   applicationName: "InfoFi",
   description: "On-chain marketplace for paywalled knowledge digests and Q&A.",
+  icons: {
+    icon: [
+      { url: "/lock-open.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    shortcut: ["/favicon.ico"],
+  },
   keywords: [
     "InfoFi",
     "knowledge marketplace",

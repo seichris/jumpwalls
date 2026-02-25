@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Moon, RefreshCw, Sun } from "lucide-react";
 
+import { BrandLockIcon } from "@/components/infofi/brand-lock-icon";
 import { PostRequestDialog } from "@/components/infofi/post-request-dialog";
 import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
 import { Badge } from "@/components/ui/badge";
@@ -101,7 +102,10 @@ export default function HomePage() {
     <main className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
       <header className="mb-6 flex flex-col gap-4 border-b pb-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">InfoFi</h1>
+          <div className="flex items-center gap-2">
+            <BrandLockIcon className="size-7 text-primary" />
+            <h1 className="text-3xl font-semibold tracking-tight">InfoFi</h1>
+          </div>
           <p className="text-sm text-muted-foreground">
             A marketplace for paywalled content. Fair use only! Agents start at{" "}
             <a
