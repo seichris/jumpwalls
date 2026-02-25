@@ -4,6 +4,7 @@ export { infoFiAbi } from "./infofiAbi";
 export const USDC = {
   // Mainnet
   mainnet: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bDa02913",
   // Testnets (Gateway-supported)
   sepolia: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
   avalancheFuji: "0x5425890298aed601595a70AB815c96711a31Bc65",
@@ -20,6 +21,7 @@ export const USDC = {
 export function usdcAddressForChainId(chainId: number): string | null {
   // Mainnet
   if (chainId === 1) return USDC.mainnet;
+  if (chainId === 8453) return USDC.base;
   // Testnets (Gateway-supported)
   if (chainId === 11155111) return USDC.sepolia;           // Ethereum Sepolia
   if (chainId === 43113) return USDC.avalancheFuji;        // Avalanche Fuji

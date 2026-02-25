@@ -86,12 +86,14 @@ export function getConfig() {
   }
 
   if (!rpcUrl) {
-    throw new Error("Missing RPC URL (set NEXT_PUBLIC_RPC_URL, or NEXT_PUBLIC_RPC_URLS_ETHEREUM_SEPOLIA/MAINNET)");
+    throw new Error(
+      "Missing RPC URL (set NEXT_PUBLIC_RPC_URL, or NEXT_PUBLIC_RPC_URLS_BASE_MAINNET/NEXT_PUBLIC_RPC_URLS_ETHEREUM_MAINNET/NEXT_PUBLIC_RPC_URLS_ETHEREUM_SEPOLIA)."
+    );
   }
 
   if (!/^https?:\/\//i.test(rpcUrl)) {
     throw new Error(
-      "Invalid RPC URL (must start with http:// or https://). Check for accidental quotes in env vars like NEXT_PUBLIC_RPC_URLS_ETHEREUM_MAINNET."
+      "Invalid RPC URL (must start with http:// or https://). Check for accidental quotes in env vars like NEXT_PUBLIC_RPC_URLS_BASE_MAINNET."
     );
   }
 

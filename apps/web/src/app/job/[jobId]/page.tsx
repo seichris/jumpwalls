@@ -44,7 +44,7 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
 export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
   const jobId = (params?.jobId || "").toLowerCase();
-  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
+  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
   const { address, chainId, connect, switchChain } = useWallet();
 
   const [data, setData] = React.useState<InfoFiJobWithDetails | null>(null);

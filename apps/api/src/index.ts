@@ -39,7 +39,7 @@ async function main() {
   process.env.DATABASE_URL ||= env.DATABASE_URL;
 
   if (env.CONTRACT_ADDRESS && env.CONTRACT_ADDRESS.length > 0 && env.RPC_URLS.length === 0) {
-    throw new Error("RPC not configured. Set RPC_URL (comma-separated ok) or RPC_URLS_ETHEREUM_SEPOLIA/RPC_URLS_ETHEREUM_MAINNET.");
+    throw new Error("RPC not configured. Set RPC_URL (comma-separated ok) or RPC_URLS_BASE_MAINNET/RPC_URLS_ETHEREUM_MAINNET/RPC_URLS_ETHEREUM_SEPOLIA.");
   }
 
   const rpcTransport =

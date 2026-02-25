@@ -6,7 +6,7 @@ import { ensureWalletChain, getConfig, getPublicClient, getWalletClient } from "
 export const ETH_TOKEN = "0x0000000000000000000000000000000000000000";
 
 export function chainIdFromEnv() {
-  return Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
+  return Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
 }
 
 export function usdcForChain() {

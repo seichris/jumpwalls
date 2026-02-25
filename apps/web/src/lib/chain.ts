@@ -85,6 +85,20 @@ export function appChain() {
     });
   }
 
+  if (id === 8453) {
+    const rpcUrls = firstRpcUrls(
+      process.env.NEXT_PUBLIC_RPC_URLS_BASE_MAINNET,
+      process.env.NEXT_PUBLIC_RPC_URL_BASE_MAINNET,
+      process.env.NEXT_PUBLIC_RPC_URL
+    );
+    return defineChain({
+      id: 8453,
+      name: "Base",
+      nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: rpcUrls.length ? rpcUrls : [""] } }
+    });
+  }
+
   // Fallback: user must add their chain to wallet; this is for viem typing.
   const rpcUrls = firstRpcUrls(process.env.NEXT_PUBLIC_RPC_URL);
   return defineChain({

@@ -22,7 +22,7 @@ import { canPostRequestWithBalance, formatWalletFundingSummary } from "@/lib/wal
 
 export default function NewRequestPage() {
   const router = useRouter();
-  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
+  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
   const {
     address,
     chainId,

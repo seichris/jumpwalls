@@ -9,8 +9,10 @@ const EnvSchema = z.object({
   // Chain-specific Ethereum RPCs (used when CHAIN_ID matches and RPC_URL is unset/empty).
   RPC_URLS_ETHEREUM_MAINNET: z.string().optional().or(z.literal("")).default(""),
   RPC_URLS_ETHEREUM_SEPOLIA: z.string().optional().or(z.literal("")).default(""),
+  RPC_URLS_BASE_MAINNET: z.string().optional().or(z.literal("")).default(""),
   RPC_URL_ETHEREUM_MAINNET: z.string().optional().or(z.literal("")).default(""),
   RPC_URL_ETHEREUM_SEPOLIA: z.string().optional().or(z.literal("")).default(""),
+  RPC_URL_BASE_MAINNET: z.string().optional().or(z.literal("")).default(""),
   CHAIN_ID: z.coerce.number().int().positive().default(31337),
   CONTRACT_KIND: z
     .preprocess(
@@ -130,6 +132,9 @@ export function loadEnv(): Env {
     if (env.CHAIN_ID === 1) {
       rpcUrls = parseRpcUrls(env.RPC_URLS_ETHEREUM_MAINNET);
       if (rpcUrls.length === 0) rpcUrls = parseRpcUrls(env.RPC_URL_ETHEREUM_MAINNET);
+    } else if (env.CHAIN_ID === 8453) {
+      rpcUrls = parseRpcUrls(env.RPC_URLS_BASE_MAINNET);
+      if (rpcUrls.length === 0) rpcUrls = parseRpcUrls(env.RPC_URL_BASE_MAINNET);
     } else if (env.CHAIN_ID === 11155111) {
       rpcUrls = parseRpcUrls(env.RPC_URLS_ETHEREUM_SEPOLIA);
       if (rpcUrls.length === 0) rpcUrls = parseRpcUrls(env.RPC_URL_ETHEREUM_SEPOLIA);

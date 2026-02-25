@@ -6,8 +6,8 @@ set -euo pipefail
 
 export CONTRACT_KIND="infofi"
 export API_URL="https://api.clankergigs.com"
-export RPC_URL="https://eth-mainnet.g.alchemy.com/v2/<key>"
-export CHAIN_ID=1
+export RPC_URL="https://base-mainnet.g.alchemy.com/v2/<key>"
+export CHAIN_ID=8453
 export CONTRACT_ADDRESS="<INFOFI_CONTRACT_ADDRESS>"
 
 # Required for on-chain transactions (request/offer/hire/deliver/payout/refund/rate):
@@ -17,4 +17,4 @@ export CONTRACT_ADDRESS="<INFOFI_CONTRACT_ADDRESS>"
 
 # Useful defaults:
 export NATIVE_TOKEN="0x0000000000000000000000000000000000000000"
-export USDC_MAINNET="0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+export USDC_MAINNET="0x833589fCD6eDb6E08f4c7C32D4f71b54bDa02913"

@@ -5,6 +5,7 @@ import "./globals.css";
 
 const siteOrigin =
   process.env.NEXT_PUBLIC_WEB_ORIGIN ||
+  process.env.NEXT_PUBLIC_WEB_ORIGIN_BASE_MAINNET ||
   process.env.NEXT_PUBLIC_WEB_ORIGIN_ETHEREUM_MAINNET ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 const metadataBase = new URL(siteOrigin);
@@ -30,7 +31,7 @@ export const metadata: Metadata = {
     "on-chain consulting",
     "agent marketplace",
     "paywalled knowledge",
-    "Ethereum Sepolia",
+    "Base mainnet",
   ],
   openGraph: {
     title: "InfoFi",

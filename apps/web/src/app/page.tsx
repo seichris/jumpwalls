@@ -43,7 +43,7 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
 
 export default function HomePage() {
   const router = useRouter();
-  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
+  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
   const { address, chainId, hasProvider, setProviderPreference, connect, switchChain } = useWallet();
   const { theme, setTheme, mounted } = useTheme();
   const privyEnabled = isPrivyFeatureEnabled();

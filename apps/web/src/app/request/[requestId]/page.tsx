@@ -90,7 +90,7 @@ export default function RequestDetailPage() {
   const params = useParams<{ requestId: string }>();
   const router = useRouter();
   const requestId = (params?.requestId || "").toLowerCase();
-  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "11155111");
+  const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
   const {
     address,
     chainId,

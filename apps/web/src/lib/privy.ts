@@ -6,7 +6,7 @@ function isTruthy(value: string | undefined) {
 
 function parseChainIds(raw: string | undefined): Set<number> {
   const input = (raw || "").trim();
-  const fallback = input.length > 0 ? input : "1";
+  const fallback = input.length > 0 ? input : "8453";
   const out = new Set<number>();
 
   for (const part of fallback.split(",")) {
@@ -16,7 +16,7 @@ function parseChainIds(raw: string | undefined): Set<number> {
     if (Number.isInteger(parsed) && parsed > 0) out.add(parsed);
   }
 
-  if (out.size === 0) out.add(1);
+  if (out.size === 0) out.add(8453);
   return out;
 }
 

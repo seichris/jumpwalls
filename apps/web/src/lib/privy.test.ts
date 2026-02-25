@@ -41,12 +41,12 @@ describe("privy env config", () => {
   });
 
   it("parses funding chain ids and defaults to mainnet when invalid", () => {
-    process.env.NEXT_PUBLIC_PRIVY_FUNDING_CHAIN_IDS = "1, 11155111,not-a-number";
-    expect(Array.from(privyFundingSupportedChainIds()).sort((a, b) => a - b)).toEqual([1, 11155111]);
-    expect(isPrivyFundingSupportedChain(11155111)).toBe(true);
+    process.env.NEXT_PUBLIC_PRIVY_FUNDING_CHAIN_IDS = "8453, 11155111,not-a-number";
+    expect(Array.from(privyFundingSupportedChainIds()).sort((a, b) => a - b)).toEqual([8453, 11155111]);
+    expect(isPrivyFundingSupportedChain(8453)).toBe(true);
 
     process.env.NEXT_PUBLIC_PRIVY_FUNDING_CHAIN_IDS = "bad";
-    expect(Array.from(privyFundingSupportedChainIds())).toEqual([1]);
+    expect(Array.from(privyFundingSupportedChainIds())).toEqual([8453]);
   });
 
   it("uses 50 USD as safe default amount", () => {
@@ -60,4 +60,3 @@ describe("privy env config", () => {
     expect(defaultPrivyFundingAmountUsd()).toBe("50");
   });
 });
-

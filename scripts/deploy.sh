@@ -60,6 +60,9 @@ select_rpc_url() {
     if [[ "${CHAIN_ID:-}" == "1" ]]; then
       raw="${RPC_URLS_ETHEREUM_MAINNET:-}"
       [[ -z "$raw" ]] && raw="${RPC_URL_ETHEREUM_MAINNET:-}"
+    elif [[ "${CHAIN_ID:-}" == "8453" ]]; then
+      raw="${RPC_URLS_BASE_MAINNET:-}"
+      [[ -z "$raw" ]] && raw="${RPC_URL_BASE_MAINNET:-}"
     elif [[ "${CHAIN_ID:-}" == "11155111" ]]; then
       raw="${RPC_URLS_ETHEREUM_SEPOLIA:-}"
       [[ -z "$raw" ]] && raw="${RPC_URL_ETHEREUM_SEPOLIA:-}"
@@ -70,7 +73,7 @@ select_rpc_url() {
   IFS=',' read -r -a candidates <<< "$raw"
 
   if [[ "${#candidates[@]}" -eq 0 ]]; then
-    echo "Missing RPC_URL (or RPC_URLS_ETHEREUM_MAINNET/RPC_URLS_ETHEREUM_SEPOLIA)" >&2
+    echo "Missing RPC_URL (or RPC_URLS_BASE_MAINNET/RPC_URLS_ETHEREUM_MAINNET/RPC_URLS_ETHEREUM_SEPOLIA)" >&2
     return 1
   fi
 

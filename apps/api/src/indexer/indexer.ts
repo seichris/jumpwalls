@@ -1,7 +1,6 @@
 import { getPrisma } from "../db.js";
 import { ghBountiesAbi, infoFiAbi } from "./abi.js";
 import { createPublicClient, fallback, http, isAddress, formatUnits, type Hex } from "viem";
-import { mainnet, sepolia } from "viem/chains";
 import { syncBountyLabels } from "../github/labels.js";
 import { postIssueCommentIfMissing } from "../github/comments.js";
 import { parseGithubIssueUrl } from "../github/parse.js";
@@ -113,9 +112,7 @@ export async function startIndexer(cfg: IndexerConfig) {
   const abi = contractKind === "infofi" ? infoFiAbi : ghBountiesAbi;
 
   const transport = cfg.rpcUrls.length > 1 ? fallback(cfg.rpcUrls.map((url) => http(url))) : http(cfg.rpcUrls[0]!);
-  const chain = cfg.chainId === 1 ? mainnet : cfg.chainId === 11155111 ? sepolia : undefined;
   const client = createPublicClient({
-    chain,
     transport,
   });
 
