@@ -9,13 +9,20 @@ import type { GithubAuthConfig } from "./github/appAuth.js";
 import { parseGithubIssueUrl, parseGithubPullRequestUrl } from "./github/parse.js";
 import { fetchGithubIssueByUrl } from "./github/issue.js";
 import { backfillLinkedPullRequests } from "./github/backfill.js";
-import { parseFairUseEnforcementMode, reviewDigestFairUse } from "./fairUse.js";
+import { combineFairUseWithLlm, parseFairUseEnforcementMode, reviewDigestFairUse } from "./fairUse.js";
+import { reviewDigestFairUseWithGemini } from "./fairUseGemini.js";
 
 export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
   const app = Fastify({ logger: true });
   const prisma = getPrisma();
   const chainId = Number(process.env.CHAIN_ID || "0");
   const contractAddress = (process.env.CONTRACT_ADDRESS || "").toLowerCase();
+  const geminiModel = (process.env.GEMINI_MODEL || "gemini-3-flash-preview").trim() || "gemini-3-flash-preview";
+  const geminiTimeoutRaw = Number(process.env.GEMINI_TIMEOUT_MS || "8000");
+  const geminiTimeoutMs =
+    Number.isFinite(geminiTimeoutRaw) && geminiTimeoutRaw > 0
+      ? Math.min(Math.max(Math.round(geminiTimeoutRaw), 1000), 30000)
+      : 8000;
 
   function scopedWhere() {
     const where: any = {};
@@ -42,6 +49,11 @@ export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
       }
     }
     return body;
+  }
+
+  function readHeaderString(value: string | string[] | undefined) {
+    if (Array.isArray(value)) return String(value[0] || "").trim();
+    return typeof value === "string" ? value.trim() : "";
   }
 
   function infoFiJobStatus(job: { deliveredAt: Date | null; remainingWei: string }) {
@@ -211,13 +223,44 @@ export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
       return reply.code(400).send({ error: "Missing required fields: jobId, digest, consultantAddress" });
     }
 
-    const fairUse = reviewDigestFairUse({
+    const heuristicFairUse = reviewDigestFairUse({
       digest,
       sourceURI,
       question,
       citations: body.citations,
       proof
     });
+    const requestGeminiApiKey = readHeaderString(req.headers["x-gemini-api-key"]);
+    const serverGeminiApiKey = String(process.env.GEMINI_API_KEY || "").trim();
+    const geminiApiKey = requestGeminiApiKey || serverGeminiApiKey;
+    let fairUse = combineFairUseWithLlm(heuristicFairUse, null);
+    if (geminiApiKey) {
+      try {
+        const llmReview = await reviewDigestFairUseWithGemini({
+          apiKey: geminiApiKey,
+          model: geminiModel,
+          timeoutMs: geminiTimeoutMs,
+          keySource: requestGeminiApiKey ? "request-header" : "server-env",
+          input: {
+            digest,
+            sourceURI,
+            question,
+            citations: body.citations,
+            proof
+          }
+        });
+        fairUse = combineFairUseWithLlm(heuristicFairUse, llmReview);
+      } catch (err) {
+        req.log.warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            model: geminiModel
+          },
+          "Gemini fair-use second pass failed; using heuristic-only result"
+        );
+      }
+    }
+
     const fairUseMode = parseFairUseEnforcementMode(process.env.FAIR_USE_ENFORCEMENT_MODE);
     if (fairUseMode === "block" && fairUse.verdict === "block") {
       return reply.code(422).send({

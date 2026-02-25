@@ -24,9 +24,11 @@ InfoFi v0 assumptions:
 Fair-use review (MVP):
 
 - Every `POST /digests` request is scored by automated heuristics (quote ratio, long verbatim spans, substitution/full-text cues, citation signals).
+- Optional second pass: API can call Gemini (`gemini-3-flash-preview`) and merge results conservatively with heuristics.
 - API returns a verdict: `allow`, `warn`, or `block`, and stores the full report on `InfoFiDigest` (`fairUse*` fields).
 - Enforcement is controlled by `FAIR_USE_ENFORCEMENT_MODE`: `off`, `warn`, or `block` (default behavior is `block` when unset).
 - In `block` mode, high-risk submissions return HTTP `422` and are not stored.
+- Configure Gemini with `GEMINI_API_KEY` (server default key). For per-request keying, pass header `x-gemini-api-key`.
 - This is a risk-screening guardrail, not a legal determination of fair use.
 
 Quick start (InfoFi mode):

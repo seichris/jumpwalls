@@ -45,8 +45,14 @@ payload="$(
 )"
 
 response="$(
+  extra_headers=()
+  if [ -n "${GEMINI_API_KEY:-}" ]; then
+    extra_headers+=(-H "x-gemini-api-key: ${GEMINI_API_KEY}")
+  fi
+
   curl -sS "$API_URL/digests" \
     -H "Content-Type: application/json" \
+    "${extra_headers[@]}" \
     -d "$payload"
 )"
 

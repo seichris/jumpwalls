@@ -14,6 +14,9 @@ export CONTRACT_ADDRESS="<INFOFI_CONTRACT_ADDRESS>"
 # - Use the requester’s key when acting as requester.
 # - Use the consultant’s key when acting as consultant.
 # export PRIVATE_KEY="0x..."
+#
+# Optional for API fair-use second pass (sent as x-gemini-api-key by 07_store_digest.sh):
+# export GEMINI_API_KEY="<google_ai_api_key>"
 
 # Useful defaults:
 export NATIVE_TOKEN="0x0000000000000000000000000000000000000000"

@@ -1,6 +1,8 @@
 export type FairUseVerdict = "allow" | "warn" | "block";
 export type FairUseRiskLevel = "low" | "medium" | "high";
 export type FairUseEnforcementMode = "off" | "warn" | "block";
+export type FairUseReviewMethod = "heuristic-only" | "heuristic+gemini";
+export type FairUseLlmKeySource = "request-header" | "server-env";
 
 export type FairUseInput = {
   digest: string;
@@ -32,7 +34,19 @@ export type FairUseFactorScores = {
   marketEffect: number;
 };
 
-export type FairUseReport = {
+export type FairUseLlmReview = {
+  provider: "gemini";
+  model: string;
+  keySource: FairUseLlmKeySource;
+  verdict: FairUseVerdict;
+  riskLevel: FairUseRiskLevel;
+  score: number;
+  summary: string;
+  reasons: string[];
+  confidence: number | null;
+};
+
+export type FairUseSnapshot = {
   policyVersion: string;
   verdict: FairUseVerdict;
   riskLevel: FairUseRiskLevel;
@@ -43,7 +57,21 @@ export type FairUseReport = {
   metrics: FairUseMetrics;
 };
 
-export const FAIR_USE_POLICY_VERSION = "infofi-fair-use-v1";
+export type FairUseReport = {
+  policyVersion: string;
+  verdict: FairUseVerdict;
+  riskLevel: FairUseRiskLevel;
+  score: number;
+  summary: string;
+  reasons: string[];
+  factors: FairUseFactorScores;
+  metrics: FairUseMetrics;
+  reviewMethod?: FairUseReviewMethod;
+  heuristic?: FairUseSnapshot;
+  llm?: FairUseLlmReview | null;
+};
+
+export const FAIR_USE_POLICY_VERSION = "infofi-fair-use-v2";
 
 const TRANSFORM_CUES = [
   "summary",
@@ -93,6 +121,76 @@ const ATTRIBUTION_CUES = [
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function riskRank(level: FairUseRiskLevel) {
+  if (level === "low") return 0;
+  if (level === "medium") return 1;
+  return 2;
+}
+
+export function riskLevelToVerdict(level: FairUseRiskLevel): FairUseVerdict {
+  if (level === "low") return "allow";
+  if (level === "medium") return "warn";
+  return "block";
+}
+
+function makeSnapshot(report: FairUseReport): FairUseSnapshot {
+  return {
+    policyVersion: report.policyVersion,
+    verdict: report.verdict,
+    riskLevel: report.riskLevel,
+    score: report.score,
+    summary: report.summary,
+    reasons: report.reasons,
+    factors: report.factors,
+    metrics: report.metrics,
+  };
+}
+
+function uniqueReasons(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const text = value.trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(text);
+  }
+  return result;
+}
+
+export function combineFairUseWithLlm(heuristic: FairUseReport, llm: FairUseLlmReview | null): FairUseReport {
+  const heuristicSnapshot = makeSnapshot(heuristic);
+  if (!llm) {
+    return {
+      ...heuristic,
+      reviewMethod: "heuristic-only",
+      heuristic: heuristicSnapshot,
+      llm: null,
+    };
+  }
+
+  const llmRiskHigher = riskRank(llm.riskLevel) >= riskRank(heuristic.riskLevel);
+  const riskLevel = llmRiskHigher ? llm.riskLevel : heuristic.riskLevel;
+  const summary = llmRiskHigher ? llm.summary : heuristic.summary;
+  const reasons = uniqueReasons([...heuristic.reasons, ...llm.reasons]);
+  const score = clamp(Math.min(heuristic.score, llm.score), 0, 100);
+
+  return {
+    ...heuristic,
+    policyVersion: FAIR_USE_POLICY_VERSION,
+    verdict: riskLevelToVerdict(riskLevel),
+    riskLevel,
+    score,
+    summary,
+    reasons: reasons.length > 0 ? reasons : [summary],
+    reviewMethod: "heuristic+gemini",
+    heuristic: heuristicSnapshot,
+    llm,
+  };
 }
 
 function countWordLikeTokens(text: string) {
