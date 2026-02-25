@@ -3,6 +3,7 @@ import type {
   InfoFiJob,
   InfoFiJobWithDetails,
   InfoFiOffer,
+  InfoFiReimbursementPreview,
   InfoFiRequest,
   InfoFiRequestWithDetails,
 } from "./infofi-types";
@@ -85,6 +86,16 @@ export async function getJobById(jobId: string): Promise<InfoFiJobWithDetails | 
   const response = await fetch(url, { credentials: "include", cache: "no-store" });
   const data = await parseResponse<{ job?: InfoFiJobWithDetails | null }>(response);
   return data.job ?? null;
+}
+
+export async function getJobReimbursementPreview(jobId: string): Promise<InfoFiReimbursementPreview | null> {
+  const response = await fetch(`${apiBase()}/jobs/${encodeURIComponent(jobId)}/reimbursement-preview`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (response.status === 404) return null;
+  const data = await parseResponse<{ preview?: InfoFiReimbursementPreview | null }>(response);
+  return data.preview ?? null;
 }
 
 export async function createDigest(input: {

@@ -86,6 +86,56 @@ export type InfoFiDigest = {
   updatedAt: string;
 };
 
+export type InfoFiReimbursementSuggestedPayout = {
+  recipient: string;
+  amountWei: string;
+  reason: "x402_reimbursement" | "consultant_labor";
+};
+
+export type InfoFiReimbursementVerifiedCitation = {
+  index: number;
+  url: string;
+  chainId: number;
+  token: string;
+  normalizedToken: string | null;
+  amountWei: string;
+  payTo: string;
+  txHash: string;
+  purchasedAt: string | null;
+  payer: string;
+  payerSource: "transfer_log" | "native_transfer" | "consultant_fallback";
+  verificationNote: string | null;
+};
+
+export type InfoFiReimbursementUnverifiedCitation = {
+  index: number;
+  reason: string;
+  citation: {
+    type: "x402";
+    url: string | null;
+    chainId: number | null;
+    token: string | null;
+    amountWei: string | null;
+    payTo: string | null;
+    txHash: string | null;
+  };
+};
+
+export type InfoFiReimbursementPreview = {
+  jobId: string;
+  chainId: number;
+  paymentToken: string;
+  remainingWei: string;
+  reimbursementTotalWei: string;
+  canAutoSettle: boolean;
+  suggestedPayouts: InfoFiReimbursementSuggestedPayout[];
+  verifiedCitations: InfoFiReimbursementVerifiedCitation[];
+  unverifiedCitations: InfoFiReimbursementUnverifiedCitation[];
+  totalsByPayer: Array<{ payer: string; amountWei: string }>;
+  totalsByPayTo: Array<{ payTo: string; amountWei: string }>;
+  notes: string[];
+};
+
 export type InfoFiJobBase = {
   id: string;
   jobId: string;

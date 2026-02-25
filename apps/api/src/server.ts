@@ -11,6 +11,7 @@ import { fetchGithubIssueByUrl } from "./github/issue.js";
 import { backfillLinkedPullRequests } from "./github/backfill.js";
 import { combineFairUseWithLlm, parseFairUseEnforcementMode, reviewDigestFairUse } from "./fairUse.js";
 import { reviewDigestFairUseWithGemini } from "./fairUseGemini.js";
+import { buildReimbursementPreview } from "./x402.js";
 
 export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
   const app = Fastify({ logger: true });
@@ -172,6 +173,33 @@ export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
       .map((job) => ({ ...job, status: infoFiJobStatus(job) }))
       .filter((job) => (statusQuery ? job.status === statusQuery : true));
     return { jobs: result };
+  });
+
+  app.get("/jobs/:jobId/reimbursement-preview", async (req, reply) => {
+    const params = req.params as { jobId?: string };
+    const jobId = typeof params.jobId === "string" ? params.jobId.trim().toLowerCase() : "";
+    if (!jobId) return reply.code(400).send({ error: "Missing jobId" });
+
+    const job = await prisma.infoFiJob.findFirst({
+      where: { ...scopedWhere(), jobId }
+    });
+    if (!job) return reply.code(404).send({ error: "Job not found" });
+
+    const digest = await prisma.infoFiDigest.findFirst({
+      where: { jobId: job.jobId },
+      orderBy: { createdAt: "desc" }
+    });
+
+    const preview = await buildReimbursementPreview({
+      jobId: job.jobId,
+      chainId: job.chainId,
+      paymentToken: job.paymentToken,
+      consultant: job.consultant,
+      remainingWei: job.remainingWei,
+      citationsJson: digest?.citationsJson ?? null
+    });
+
+    return reply.send({ preview });
   });
 
   app.get("/digests", async (req) => {

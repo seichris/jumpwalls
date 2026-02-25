@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { createDigest, getDigestByMetadataURI, getJobById } from "@/lib/api";
+import { createDigest, getDigestByMetadataURI, getJobById, getJobReimbursementPreview } from "@/lib/api";
 import {
   deliverDigestTx,
   formatAmount,
@@ -25,12 +25,23 @@ import {
   tokenSymbol,
 } from "@/lib/infofi-contract";
 import { copyText, logUiAction } from "@/lib/infofi-ux";
-import type { InfoFiJobWithDetails } from "@/lib/infofi-types";
+import type { InfoFiJobWithDetails, InfoFiReimbursementPreview } from "@/lib/infofi-types";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { errorMessage, friendlyTxError } from "@/lib/utils";
 
 function shortHash(value: string) {
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
+function payoutReasonLabel(reason: "x402_reimbursement" | "consultant_labor") {
+  return reason === "x402_reimbursement" ? "Source reimbursement" : "Consultant labor";
+}
+
+function txExplorerUrl(chainId: number, txHash: string) {
+  if (chainId === 1) return `https://etherscan.io/tx/${txHash}`;
+  if (chainId === 11155111) return `https://sepolia.etherscan.io/tx/${txHash}`;
+  if (chainId === 8453) return `https://basescan.org/tx/${txHash}`;
+  return "";
 }
 
 function statusVariant(status: string): "default" | "secondary" | "warning" | "success" {
@@ -72,6 +83,15 @@ function parseFairUseSummary(reportJson: string | null | undefined): string | nu
   }
 }
 
+function prettyJsonText(jsonText: string | null | undefined): string {
+  if (!jsonText) return "";
+  try {
+    return JSON.stringify(JSON.parse(jsonText), null, 2);
+  } catch {
+    return jsonText;
+  }
+}
+
 export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
   const jobId = (params?.jobId || "").toLowerCase();
@@ -84,11 +104,14 @@ export default function JobDetailPage() {
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [lagWarning, setLagWarning] = React.useState<string | null>(null);
   const [copyState, setCopyState] = React.useState<string | null>(null);
+  const [reimbursementPreview, setReimbursementPreview] = React.useState<InfoFiReimbursementPreview | null>(null);
+  const [reimbursementError, setReimbursementError] = React.useState<string | null>(null);
   const [payoutNonce, setPayoutNonce] = React.useState<string>("-");
   const [refundNonce, setRefundNonce] = React.useState<string>("-");
 
   const [digestText, setDigestText] = React.useState("");
   const [proofText, setProofText] = React.useState("");
+  const [citationsText, setCitationsText] = React.useState("");
   const [submittingDigest, setSubmittingDigest] = React.useState(false);
 
   const [payoutRecipient, setPayoutRecipient] = React.useState("");
@@ -97,6 +120,7 @@ export default function JobDetailPage() {
 
   const [refundAmount, setRefundAmount] = React.useState("");
   const [submittingRefund, setSubmittingRefund] = React.useState(false);
+  const [submittingSuggestedPayouts, setSubmittingSuggestedPayouts] = React.useState(false);
 
   const [stars, setStars] = React.useState("5");
   const [ratingUri, setRatingUri] = React.useState("ui://infofi/web");
@@ -108,13 +132,22 @@ export default function JobDetailPage() {
     if (!jobId) return;
     setLoading(true);
     setError(null);
+    setReimbursementError(null);
     try {
-      const job = await getJobById(jobId);
+      const [job, preview] = await Promise.all([
+        getJobById(jobId),
+        getJobReimbursementPreview(jobId).catch((err: unknown) => {
+          setReimbursementError(errorMessage(err));
+          return null;
+        }),
+      ]);
       if (!job) {
         setData(null);
+        setReimbursementPreview(null);
         setError("Job not found.");
         return;
       }
+      setReimbursementPreview(preview);
       if (!job.digest && job.metadataURI) {
         const digest = await getDigestByMetadataURI(job.metadataURI);
         setData({ ...job, digest: digest || null });
@@ -146,6 +179,7 @@ export default function JobDetailPage() {
         // keep UI functional if chain reads fail
       }
     } catch (err: unknown) {
+      setReimbursementPreview(null);
       setError(errorMessage(err));
     } finally {
       setLoading(false);
@@ -163,6 +197,7 @@ export default function JobDetailPage() {
     setRefundAmount("");
     setDigestText(data.digest?.digest ?? "");
     setProofText(data.digest?.proof ?? data.proofTypeOrURI ?? "");
+    setCitationsText(prettyJsonText(data.digest?.citationsJson));
   }, [data]);
 
   const isRequester = Boolean(address && data && address.toLowerCase() === data.requester.toLowerCase());
@@ -172,6 +207,14 @@ export default function JobDetailPage() {
   const remainingWei = data ? BigInt(data.remainingWei) : 0n;
   const isClosed = remainingWei === 0n;
   const fairUseSummary = parseFairUseSummary(data?.digest?.fairUseReportJson);
+  const canRunSuggestedPayouts = Boolean(
+    isRequester &&
+      hasDelivered &&
+      !isClosed &&
+      reimbursementPreview &&
+      reimbursementPreview.canAutoSettle &&
+      reimbursementPreview.suggestedPayouts.length > 0
+  );
 
   const alreadyRated = Boolean(
     address &&
@@ -184,6 +227,15 @@ export default function JobDetailPage() {
     setSubmittingDigest(true);
     try {
       if (!digestText.trim()) throw new Error("Digest text is required.");
+      const citationsValue = citationsText.trim();
+      let parsedCitations: unknown = undefined;
+      if (citationsValue) {
+        try {
+          parsedCitations = JSON.parse(citationsValue);
+        } catch {
+          throw new Error("Citations JSON is invalid.");
+        }
+      }
       const created = await createDigest({
         jobId: data.jobId,
         digest: digestText.trim(),
@@ -191,6 +243,7 @@ export default function JobDetailPage() {
         sourceURI: data.digest?.sourceURI ?? null,
         question: data.digest?.question ?? null,
         proof: proofText.trim() || null,
+        citations: parsedCitations,
       });
       await deliverDigestTx({
         jobId: data.jobId as Hex,
@@ -227,6 +280,54 @@ export default function JobDetailPage() {
       setActionError(typeof maybeShort === "string" ? maybeShort : friendlyTxError(err));
     } finally {
       setSubmittingPayout(false);
+    }
+  }
+
+  async function onRunSuggestedPayouts() {
+    if (!data || !reimbursementPreview || !address) return;
+    setActionError(null);
+    setSubmittingSuggestedPayouts(true);
+    try {
+      if (!reimbursementPreview.canAutoSettle) {
+        throw new Error("Suggested payouts are unavailable because reimbursements exceed remaining escrow.");
+      }
+      if (reimbursementPreview.suggestedPayouts.length === 0) {
+        throw new Error("No suggested payouts are available for this job.");
+      }
+
+      let totalPlannedWei = 0n;
+      for (const payout of reimbursementPreview.suggestedPayouts) {
+        if (!isAddress(payout.recipient as Address)) {
+          throw new Error(`Invalid payout recipient: ${payout.recipient}`);
+        }
+        const amountWei = BigInt(payout.amountWei);
+        if (amountWei <= 0n) continue;
+        totalPlannedWei += amountWei;
+      }
+      if (totalPlannedWei > BigInt(data.remainingWei)) {
+        throw new Error("Suggested payouts exceed remaining escrow. Refresh and retry.");
+      }
+
+      for (const payout of reimbursementPreview.suggestedPayouts) {
+        const amountWei = BigInt(payout.amountWei);
+        if (amountWei <= 0n) continue;
+        await payoutByRequesterTx({
+          jobId: data.jobId as Hex,
+          recipient: payout.recipient as Address,
+          amountWei,
+        });
+      }
+      logUiAction("payout_with_reimbursements", {
+        jobId: data.jobId,
+        reimbursementTotalWei: reimbursementPreview.reimbursementTotalWei,
+        payoutCount: reimbursementPreview.suggestedPayouts.length,
+      });
+      await fetchJob();
+    } catch (err: unknown) {
+      const maybeShort = err && typeof err === "object" ? (err as { shortMessage?: unknown }).shortMessage : undefined;
+      setActionError(typeof maybeShort === "string" ? maybeShort : friendlyTxError(err));
+    } finally {
+      setSubmittingSuggestedPayouts(false);
     }
   }
 
@@ -296,6 +397,11 @@ export default function JobDetailPage() {
       {loading ? <p className="text-sm text-muted-foreground">Loading job...</p> : null}
       {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
       {lagWarning ? <p className="mb-3 rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">{lagWarning}</p> : null}
+      {reimbursementError ? (
+        <p className="mb-3 rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+          Reimbursement preview unavailable: {reimbursementError}
+        </p>
+      ) : null}
       {copyState ? <p className="mb-3 text-xs text-muted-foreground">{copyState}</p> : null}
 
       {data ? (
@@ -418,6 +524,16 @@ export default function JobDetailPage() {
                     placeholder="zkTLS included, reputation-only, or proof URI"
                   />
                 </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="digest-citations">Citations JSON (optional)</Label>
+                  <textarea
+                    id="digest-citations"
+                    className="min-h-28 rounded-md border bg-background px-3 py-2 text-xs outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    value={citationsText}
+                    onChange={(event) => setCitationsText(event.target.value)}
+                    placeholder='[{"type":"x402","url":"https://...","chainId":8453,"token":"0x...","amount":"1000000","payTo":"0x...","txHash":"0x..."}]'
+                  />
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Fair-use guardrail: submit summaries/answers only, not full source text.
                 </p>
@@ -431,9 +547,194 @@ export default function JobDetailPage() {
           </section>
 
           <section className="rounded-lg border p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold">x402 Source Payments</h2>
+              {reimbursementPreview ? (
+                <>
+                  <Badge variant="secondary">
+                    Verified: {reimbursementPreview.verifiedCitations.length}
+                  </Badge>
+                  <Badge variant="secondary">
+                    Total: {formatAmount(data.paymentToken, reimbursementPreview.reimbursementTotalWei)} {tokenSymbol(data.paymentToken)}
+                  </Badge>
+                </>
+              ) : null}
+            </div>
+            {!reimbursementPreview ? (
+              <p className="text-sm text-muted-foreground">No reimbursement preview available for this job.</p>
+            ) : (
+              <div className="space-y-4">
+                {reimbursementPreview.notes.map((note) => (
+                  <p key={note} className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                    {note}
+                  </p>
+                ))}
+
+                <div className="rounded-md border">
+                  <div className="border-b px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Verified citations
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Source</TableHead>
+                        <TableHead>PayTo</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Payer</TableHead>
+                        <TableHead>Tx</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reimbursementPreview.verifiedCitations.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="py-4 text-center text-muted-foreground">
+                            No verified x402 citations.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        reimbursementPreview.verifiedCitations.map((citation) => {
+                          const explorer = txExplorerUrl(citation.chainId, citation.txHash);
+                          return (
+                            <TableRow key={`verified-${citation.index}-${citation.txHash}`}>
+                              <TableCell className="max-w-[280px] break-all text-xs">
+                                <a href={citation.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                                  {citation.url}
+                                </a>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">{shortHash(citation.payTo)}</TableCell>
+                              <TableCell className="text-right font-mono text-xs">
+                                {formatAmount(data.paymentToken, citation.amountWei)}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {shortHash(citation.payer)}
+                                {citation.verificationNote ? (
+                                  <p className="mt-1 max-w-[220px] whitespace-normal text-[11px] text-muted-foreground">
+                                    {citation.verificationNote}
+                                  </p>
+                                ) : null}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {explorer ? (
+                                  <a href={explorer} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                                    {shortHash(citation.txHash)}
+                                  </a>
+                                ) : (
+                                  shortHash(citation.txHash)
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="rounded-md border">
+                  <div className="border-b px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Unverified citations
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Source</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Reason</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reimbursementPreview.unverifiedCitations.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="py-4 text-center text-muted-foreground">
+                            No unverified x402 citations.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        reimbursementPreview.unverifiedCitations.map((entry, index) => (
+                          <TableRow key={`unverified-${entry.index}-${index}`}>
+                            <TableCell className="max-w-[280px] break-all text-xs">
+                              {entry.citation.url ? (
+                                <a href={entry.citation.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                                  {entry.citation.url}
+                                </a>
+                              ) : (
+                                "-"
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs">
+                              {entry.citation.amountWei ?? "-"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{entry.reason}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-lg border p-4">
             <h2 className="mb-3 text-sm font-semibold">Settlement</h2>
             {isRequester && hasDelivered && !isClosed ? (
               <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-md border p-3 md:col-span-2">
+                  <h3 className="mb-2 text-sm font-medium">Payout With Reimbursements</h3>
+                  {!reimbursementPreview ? (
+                    <p className="text-sm text-muted-foreground">
+                      Reimbursement preview unavailable. Use manual payout/refund controls below.
+                    </p>
+                  ) : (
+                    <div className="grid gap-3">
+                      <div className="grid gap-1 text-xs text-muted-foreground md:grid-cols-2">
+                        <p>Verified x402 total: {formatAmount(data.paymentToken, reimbursementPreview.reimbursementTotalWei)} {tokenSymbol(data.paymentToken)}</p>
+                        <p>Remaining escrow: {formatAmount(data.paymentToken, reimbursementPreview.remainingWei)} {tokenSymbol(data.paymentToken)}</p>
+                      </div>
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Recipient</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                              <TableHead>Reason</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {reimbursementPreview.suggestedPayouts.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={3} className="py-3 text-center text-muted-foreground">
+                                  No suggested payouts available.
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              reimbursementPreview.suggestedPayouts.map((payout, index) => (
+                                <TableRow key={`suggested-${payout.recipient}-${payout.reason}-${index}`}>
+                                  <TableCell className="font-mono text-xs">{shortHash(payout.recipient)}</TableCell>
+                                  <TableCell className="text-right font-mono text-xs">
+                                    {formatAmount(data.paymentToken, payout.amountWei)}
+                                  </TableCell>
+                                  <TableCell className="text-xs">{payoutReasonLabel(payout.reason)}</TableCell>
+                                </TableRow>
+                              ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button onClick={onRunSuggestedPayouts} disabled={wrongChain || submittingSuggestedPayouts || !canRunSuggestedPayouts}>
+                          {submittingSuggestedPayouts ? "Executing Suggested Payouts..." : "Execute Suggested Payouts"}
+                        </Button>
+                        {!reimbursementPreview.canAutoSettle ? (
+                          <p className="text-xs text-muted-foreground">
+                            Suggested payouts disabled because reimbursement total exceeds remaining escrow.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="rounded-md border p-3">
                   <h3 className="mb-2 text-sm font-medium">Payout Consultant</h3>
                   <div className="grid gap-2">
