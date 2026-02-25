@@ -289,10 +289,10 @@ function updateOfferRequestSelectionUi(): void {
     offerRequestSelection.textContent = "Select an open request above.";
   }
 
-  for (const item of matchedList.querySelectorAll("li[data-request-id]")) {
+  matchedList.querySelectorAll("li[data-request-id]").forEach((item) => {
     const isSelected = item.getAttribute("data-request-id") === selectedRequestId;
     item.classList.toggle("selected", isSelected);
-  }
+  });
 }
 
 function requireOfferRequestById(requestId: string): OpenRequest {

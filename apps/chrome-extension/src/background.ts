@@ -1,6 +1,7 @@
 import { REFRESH_ALARM } from "./constants";
 import { fetchContractConfig, fetchOpenRequests, normalizeApiUrl } from "./api";
 import { domainMatches, extractDomainFromSource, extractDomainFromUrl } from "./domain";
+import { computeSubscriptionMatches } from "./matching";
 import { buildRefreshErrorState, buildRefreshSuccessState } from "./refresh-state";
 import { getSettings, getState, saveSettings, saveState } from "./storage";
 import type { BackgroundStateResponse, DomainMatch, RuntimeMessage } from "./types";
@@ -20,7 +21,7 @@ async function updateBadge(matchCount: number): Promise<void> {
   await chrome.action.setBadgeText({ text: badgeTextFromMatchCount(matchCount) });
 }
 
-async function computeMatches(lookbackDays: number, openRequests: Awaited<ReturnType<typeof fetchOpenRequests>>) {
+async function computeHistoryMatches(lookbackDays: number, openRequests: Awaited<ReturnType<typeof fetchOpenRequests>>) {
   const domainToRequests = new Map<string, typeof openRequests>();
   for (const request of openRequests) {
     const domain = extractDomainFromSource(request.sourceURI);
@@ -56,23 +57,23 @@ async function refreshState(): Promise<BackgroundStateResponse> {
   const apiUrl = normalizeApiUrl(settings.apiUrl);
   try {
     const [contract, openRequests] = await Promise.all([fetchContractConfig(apiUrl), fetchOpenRequests(apiUrl)]);
-    let matchedByRequestId: Record<string, DomainMatch> = {};
-    let permissionGranted = false;
-
-    if (settings.historyMatchingEnabled && (await historyPermissionGranted())) {
-      permissionGranted = true;
-      matchedByRequestId = await computeMatches(settings.historyLookbackDays, openRequests);
-    }
+    const historyMatches =
+      settings.historyMatchingEnabled && (await historyPermissionGranted())
+        ? await computeHistoryMatches(settings.historyLookbackDays, openRequests)
+        : {};
+    const subscriptionMatches = computeSubscriptionMatches(openRequests, settings.subscriptionByDomain);
+    const matchedByRequestId = {
+      ...subscriptionMatches,
+      ...historyMatches
+    };
 
     const state = buildRefreshSuccessState({
       contract,
       openRequests,
-      settings,
-      permissionGranted,
       computedMatches: matchedByRequestId
     });
     await saveState(state);
-    await updateBadge(Object.keys(matchedByRequestId).length);
+    await updateBadge(Object.keys(state.matchedByRequestId).length);
     return { settings, state };
   } catch (error) {
     const previousState = await getState();

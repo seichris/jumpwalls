@@ -27,6 +27,7 @@ export interface ExtensionSettings {
   apiUrl: string;
   historyMatchingEnabled: boolean;
   historyLookbackDays: number;
+  subscriptionByDomain: Record<string, boolean>;
 }
 
 export interface ExtensionState {

@@ -4,6 +4,7 @@ This extension provides:
 
 - requester flow from popup (`postRequest`)
 - offerer discovery from open requests + local browser-history domain matches
+- manual subscription overrides in settings (domain-level match without browser history)
 - extension badge count for matched opportunities
 - packaged toolbar/store icons (`16`, `32`, `48`, `128`)
 
@@ -26,5 +27,6 @@ pnpm -C apps/chrome-extension test
 1. Open extension options.
 2. Set `API URL` (e.g. `http://localhost:8787`).
 3. Enable history matching (grants `history` permission).
+4. In `Subscription overrides`, mark domains where you have access via app/account so requests still match without browsing history.
 
 The popup uses the active tab's injected wallet provider (`window.ethereum`) to sign transactions.

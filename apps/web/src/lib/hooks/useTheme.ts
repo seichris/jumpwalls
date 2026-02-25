@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 export type ThemeMode = "light" | "dark";
 
 const STORAGE_KEY = "infofi-theme";
-const LIGHT_FAVICON = "/favicon_black.ico";
-const DARK_FAVICON = "/favicon_white.ico";
+const LIGHT_FAVICON = "/lock-open-light.svg";
+const DARK_FAVICON = "/lock-open-dark.svg";
 
 function updateFavicon(theme: ThemeMode) {
   if (typeof document === "undefined") return;
@@ -15,6 +15,7 @@ function updateFavicon(theme: ThemeMode) {
     const fallbackIcon = document.createElement("link");
     fallbackIcon.rel = "icon";
     fallbackIcon.href = href;
+    fallbackIcon.type = "image/svg+xml";
     document.head.appendChild(fallbackIcon);
     return;
   }
@@ -22,7 +23,7 @@ function updateFavicon(theme: ThemeMode) {
   for (const link of iconLinks) {
     link.href = href;
     link.media = "all";
-    link.type = "image/x-icon";
+    link.type = "image/svg+xml";
   }
 }
 

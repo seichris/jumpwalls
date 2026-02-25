@@ -1,20 +1,18 @@
-import type { DomainMatch, ExtensionSettings, ExtensionState, OpenRequest, ContractConfig } from "./types";
+import type { ContractConfig, DomainMatch, ExtensionState, OpenRequest } from "./types";
 
 interface BuildSuccessStateArgs {
   contract: ContractConfig;
   openRequests: OpenRequest[];
-  settings: ExtensionSettings;
-  permissionGranted: boolean;
   computedMatches: Record<string, DomainMatch>;
   now?: number;
 }
 
 export function buildRefreshSuccessState(args: BuildSuccessStateArgs): ExtensionState {
-  const { contract, openRequests, settings, permissionGranted, computedMatches, now } = args;
+  const { contract, openRequests, computedMatches, now } = args;
   return {
     contract,
     openRequests,
-    matchedByRequestId: settings.historyMatchingEnabled && permissionGranted ? computedMatches : {},
+    matchedByRequestId: computedMatches,
     lastUpdatedAt: now ?? Date.now(),
     error: null
   };

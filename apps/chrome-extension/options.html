@@ -6,7 +6,7 @@
     <title>InfoFi Settings</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
+  <body class="options-page">
     <main class="panel">
       <header class="panel-header">
         <div class="brand">
@@ -15,26 +15,41 @@
         </div>
       </header>
 
-      <form id="settings-form" class="form">
-        <label>
-          API URL
-          <input id="api-url-input" name="apiUrl" required />
-        </label>
-        <label class="checkbox">
-          <input id="history-enabled-input" name="historyEnabled" type="checkbox" />
-          Enable history matching
-        </label>
-        <label>
-          History lookback (days)
-          <input id="history-lookback-input" name="historyLookbackDays" type="number" min="1" max="365" required />
-        </label>
-        <button id="save-settings-btn" type="submit">Save Settings</button>
-      </form>
-
       <section class="card">
         <p id="contract-label" class="mono">Contract info unavailable.</p>
         <p id="settings-api-label" class="mono subtle">API unavailable.</p>
       </section>
+
+      <form id="settings-form" class="form settings-form">
+        <label class="checkbox">
+          <input id="history-enabled-input" name="historyEnabled" type="checkbox" />
+          Enable history matching
+        </label>
+
+        <label id="subscription-overrides-label" class="section-caption subscriptions-label">My Subscriptions</label>
+        <section class="card subscription-overrides-card" aria-labelledby="subscription-overrides-label">
+          <p class="subtle">
+            Mark domains where you have a subscription. Requests from these domains will match even without browsing history.
+          </p>
+          <ul id="subscription-domain-list" class="list"></ul>
+        </section>
+
+        <details class="card advanced-settings">
+          <summary>Advanced Settings</summary>
+          <div class="advanced-settings-content">
+            <label>
+              API URL
+              <input id="api-url-input" name="apiUrl" required />
+            </label>
+            <label>
+              History lookback (days)
+              <input id="history-lookback-input" name="historyLookbackDays" type="number" min="1" max="365" required />
+            </label>
+          </div>
+        </details>
+
+        <button id="save-settings-btn" type="submit">Save Settings</button>
+      </form>
 
       <pre id="settings-result" class="result hidden"></pre>
     </main>

@@ -106,10 +106,61 @@ h1 {
   color: var(--muted);
 }
 
+.subscriptions-label {
+  display: block;
+  font-weight: 600;
+}
+
+.advanced-settings {
+  padding: 0;
+  overflow: hidden;
+}
+
+.advanced-settings > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-dark);
+  padding: 10px;
+}
+
+.advanced-settings[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.advanced-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
 .form {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.options-page .panel {
+  height: 100vh;
+}
+
+.options-page .settings-form {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.options-page .subscription-overrides-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.options-page #subscription-domain-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
 }
 
 .form-row {
@@ -211,6 +262,27 @@ button.secondary {
 .list li.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.domain-preference-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.domain-preference-info {
+  min-width: 0;
+}
+
+.domain-preference-summary {
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+.domain-preference-toggle {
+  margin-top: 0;
+  flex-shrink: 0;
 }
 
 .hidden-select {
