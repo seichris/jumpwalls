@@ -44,7 +44,14 @@ payload="$(
     }'
 )"
 
-curl -sS "$API_URL/digests" \
-  -H "Content-Type: application/json" \
-  -d "$payload" | jq .
+response="$(
+  curl -sS "$API_URL/digests" \
+    -H "Content-Type: application/json" \
+    -d "$payload"
+)"
 
+echo "$response" | jq .
+
+if echo "$response" | jq -e '.error != null' >/dev/null; then
+  exit 1
+fi

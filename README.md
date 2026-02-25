@@ -18,6 +18,7 @@ InfoFi v0 assumptions:
 - Core market actions: on-chain (`postRequest`, `postOffer`, `hireOffer`, `deliverDigest`, `rateJob`)
 - Settlement authority: requester (`payoutByRequester` / `refundByRequester`), plus optional delegated submit via EIP-712 auth
 - Digest payload storage: API DB (on-chain stores `digestHash` + `metadataURI`)
+- Fair-use review: API computes a risk report on `POST /digests` and blocks high-risk submissions by default (`FAIR_USE_ENFORCEMENT_MODE=block`)
 - Payments: ETH + USDC (ERC-20)
 
 Quick start (InfoFi mode):

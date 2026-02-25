@@ -41,6 +41,37 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
   return "secondary";
 }
 
+function fairUseVariant(verdict: string | null | undefined): "success" | "warning" | "secondary" {
+  const normalized = String(verdict || "").trim().toLowerCase();
+  if (normalized === "allow") return "success";
+  if (normalized === "warn") return "warning";
+  if (normalized === "block") return "secondary";
+  return "secondary";
+}
+
+function fairUseLabel(verdict: string | null | undefined) {
+  const normalized = String(verdict || "").trim().toLowerCase();
+  if (normalized === "allow") return "Fair-Use: Allow";
+  if (normalized === "warn") return "Fair-Use: Review";
+  if (normalized === "block") return "Fair-Use: Blocked";
+  return "Fair-Use: Unavailable";
+}
+
+function parseFairUseSummary(reportJson: string | null | undefined): string | null {
+  if (!reportJson) return null;
+  try {
+    const parsed = JSON.parse(reportJson) as { summary?: unknown; reasons?: unknown };
+    if (typeof parsed.summary === "string" && parsed.summary.trim()) return parsed.summary.trim();
+    if (Array.isArray(parsed.reasons)) {
+      const first = parsed.reasons.find((entry) => typeof entry === "string" && entry.trim().length > 0);
+      return typeof first === "string" ? first.trim() : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
   const jobId = (params?.jobId || "").toLowerCase();
@@ -140,6 +171,7 @@ export default function JobDetailPage() {
   const hasDelivered = Boolean(data?.deliveredAt);
   const remainingWei = data ? BigInt(data.remainingWei) : 0n;
   const isClosed = remainingWei === 0n;
+  const fairUseSummary = parseFairUseSummary(data?.digest?.fairUseReportJson);
 
   const alreadyRated = Boolean(
     address &&
@@ -340,6 +372,23 @@ export default function JobDetailPage() {
 
           <section className="rounded-lg border p-4">
             <h2 className="mb-3 text-sm font-semibold">Digest</h2>
+            {data.digest ? (
+              <div className="mb-4 rounded-md border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Automated review:</span>
+                  <Badge variant={fairUseVariant(data.digest.fairUseVerdict)}>{fairUseLabel(data.digest.fairUseVerdict)}</Badge>
+                  {typeof data.digest.fairUseScore === "number" ? (
+                    <span className="text-xs text-muted-foreground">Score {data.digest.fairUseScore}/100</span>
+                  ) : null}
+                  {data.digest.fairUsePolicyVersion ? (
+                    <span className="text-xs text-muted-foreground">{data.digest.fairUsePolicyVersion}</span>
+                  ) : null}
+                </div>
+                {fairUseSummary ? (
+                  <p className="mt-2 text-xs text-muted-foreground">{fairUseSummary}</p>
+                ) : null}
+              </div>
+            ) : null}
             {data.digest ? (
               <div className="mb-4 rounded-md border bg-muted/30 p-3 text-sm whitespace-pre-wrap">
                 {data.digest.digest}

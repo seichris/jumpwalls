@@ -9,6 +9,7 @@ import type { GithubAuthConfig } from "./github/appAuth.js";
 import { parseGithubIssueUrl, parseGithubPullRequestUrl } from "./github/parse.js";
 import { fetchGithubIssueByUrl } from "./github/issue.js";
 import { backfillLinkedPullRequests } from "./github/backfill.js";
+import { parseFairUseEnforcementMode, reviewDigestFairUse } from "./fairUse.js";
 
 export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
   const app = Fastify({ logger: true });
@@ -197,11 +198,32 @@ export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
     const digest = typeof body.digest === "string" ? body.digest.trim() : "";
     const consultantAddress = typeof body.consultantAddress === "string" ? body.consultantAddress.trim().toLowerCase() : "";
     const proof = typeof body.proof === "string" ? body.proof.trim() : null;
-    const citationsJson =
-      body.citations === undefined ? null : JSON.stringify(body.citations ?? null);
+    let citationsJson: string | null = null;
+    if (body.citations !== undefined) {
+      try {
+        citationsJson = JSON.stringify(body.citations ?? null);
+      } catch {
+        return reply.code(400).send({ error: "citations must be JSON-serializable" });
+      }
+    }
 
     if (!jobId || !digest || !consultantAddress) {
       return reply.code(400).send({ error: "Missing required fields: jobId, digest, consultantAddress" });
+    }
+
+    const fairUse = reviewDigestFairUse({
+      digest,
+      sourceURI,
+      question,
+      citations: body.citations,
+      proof
+    });
+    const fairUseMode = parseFairUseEnforcementMode(process.env.FAIR_USE_ENFORCEMENT_MODE);
+    if (fairUseMode === "block" && fairUse.verdict === "block") {
+      return reply.code(422).send({
+        error: `Fair-use review blocked this digest: ${fairUse.summary}`,
+        fairUse
+      });
     }
 
     const digestHash = keccak256(stringToHex(digest)).toLowerCase();
@@ -220,11 +242,16 @@ export async function buildServer(opts?: { github?: GithubAuthConfig | null }) {
         metadataURI,
         consultantAddress,
         proof,
-        citationsJson
+        citationsJson,
+        fairUseVerdict: fairUse.verdict,
+        fairUseRiskLevel: fairUse.riskLevel,
+        fairUseScore: fairUse.score,
+        fairUsePolicyVersion: fairUse.policyVersion,
+        fairUseReportJson: JSON.stringify(fairUse)
       }
     });
 
-    return reply.code(201).send({ digest: created });
+    return reply.code(201).send({ digest: created, fairUse });
   });
 
   registerGithubOAuthRoutes(app);

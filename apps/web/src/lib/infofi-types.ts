@@ -77,6 +77,11 @@ export type InfoFiDigest = {
   consultantAddress: string;
   proof: string | null;
   citationsJson: string | null;
+  fairUseVerdict: string | null;
+  fairUseRiskLevel: string | null;
+  fairUseScore: number | null;
+  fairUsePolicyVersion: string | null;
+  fairUseReportJson: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -117,4 +122,3 @@ export type InfoFiRequestWithDetails = InfoFiRequest & {
   offers: InfoFiOffer[];
   job: InfoFiJobBase | null;
 };
-
