@@ -25,7 +25,6 @@ export interface DomainMatch {
 
 export interface ExtensionSettings {
   apiUrl: string;
-  historyMatchingEnabled: boolean;
   historyLookbackDays: number;
   subscriptionByDomain: Record<string, boolean>;
 }

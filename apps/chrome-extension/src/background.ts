@@ -58,9 +58,7 @@ async function refreshState(): Promise<BackgroundStateResponse> {
   try {
     const [contract, openRequests] = await Promise.all([fetchContractConfig(apiUrl), fetchOpenRequests(apiUrl)]);
     const historyMatches =
-      settings.historyMatchingEnabled && (await historyPermissionGranted())
-        ? await computeHistoryMatches(settings.historyLookbackDays, openRequests)
-        : {};
+      (await historyPermissionGranted()) ? await computeHistoryMatches(settings.historyLookbackDays, openRequests) : {};
     const subscriptionMatches = computeSubscriptionMatches(openRequests, settings.subscriptionByDomain);
     const matchedByRequestId = {
       ...subscriptionMatches,
@@ -109,8 +107,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.history?.onVisited.addListener((item) => {
   void (async () => {
+    if (!(await historyPermissionGranted())) return;
     const settings = await getSettings();
-    if (!settings.historyMatchingEnabled || !(await historyPermissionGranted())) return;
     const visitedDomain = item.url ? extractDomainFromUrl(item.url) : null;
     if (!visitedDomain) return;
     const state = await getState();

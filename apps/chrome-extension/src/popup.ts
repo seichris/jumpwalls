@@ -8,8 +8,7 @@ const tabRequesterButton = document.getElementById("tab-requester-btn") as HTMLB
 const tabOffererButton = document.getElementById("tab-offerer-btn") as HTMLButtonElement;
 const tabRequesterPanel = document.getElementById("tab-requester") as HTMLElement;
 const tabOffererPanel = document.getElementById("tab-offerer") as HTMLElement;
-const refreshStateButton = document.getElementById("refresh-state-btn") as HTMLButtonElement;
-const openOptionsLink = document.getElementById("open-options-link") as HTMLAnchorElement;
+const openOptionsButton = document.getElementById("open-options-btn") as HTMLButtonElement;
 
 const postRequestForm = document.getElementById("post-request-form") as HTMLFormElement;
 const sourceUriInput = document.getElementById("source-uri-input") as HTMLInputElement;
@@ -417,11 +416,7 @@ async function handlePostOffer(event: SubmitEvent): Promise<void> {
 
 tabRequesterButton.addEventListener("click", () => showTab("requester"));
 tabOffererButton.addEventListener("click", () => showTab("offerer"));
-refreshStateButton.addEventListener("click", () => {
-  void loadBackgroundState(true).then(renderState).catch((error) => showResult(offerResult, asErrorMessage(error), true));
-});
-openOptionsLink.addEventListener("click", (event) => {
-  event.preventDefault();
+openOptionsButton.addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 paymentTokenInput.addEventListener("change", updateMaxAmountField);
@@ -443,6 +438,6 @@ void (async () => {
   updateMaxAmountField();
   updateOfferAmountField();
   await prefillSourceFromActiveTab();
-  const state = await loadBackgroundState(false);
+  const state = await loadBackgroundState(true);
   renderState(state);
 })();

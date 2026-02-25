@@ -219,6 +219,19 @@ button.secondary {
   border: 1px solid var(--border);
 }
 
+.icon-button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button svg {
+  display: block;
+}
+
 .checkbox {
   flex-direction: row;
   align-items: center;

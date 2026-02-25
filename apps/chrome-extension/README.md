@@ -26,7 +26,7 @@ pnpm -C apps/chrome-extension test
 
 1. Open extension options.
 2. Set `API URL` (e.g. `http://localhost:8787`).
-3. Enable history matching (grants `history` permission).
-4. In `Subscription overrides`, mark domains where you have access via app/account so requests still match without browsing history.
+3. Set `History lookback (days)` and save (grants `history` permission).
+4. In `My Subscriptions`, mark domains where you have access via app/account so requests still match without browsing history.
 
 The popup uses the active tab's injected wallet provider (`window.ethereum`) to sign transactions.

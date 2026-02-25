@@ -6,7 +6,6 @@ import type { BackgroundStateResponse, ExtensionSettings } from "./types";
 
 const settingsForm = document.getElementById("settings-form") as HTMLFormElement;
 const apiUrlInput = document.getElementById("api-url-input") as HTMLInputElement;
-const historyEnabledInput = document.getElementById("history-enabled-input") as HTMLInputElement;
 const historyLookbackInput = document.getElementById("history-lookback-input") as HTMLInputElement;
 const subscriptionDomainList = document.getElementById("subscription-domain-list") as HTMLUListElement;
 const contractLabel = document.getElementById("contract-label") as HTMLParagraphElement;
@@ -119,7 +118,6 @@ async function loadState(): Promise<void> {
   ]);
   latestSettings = settings;
   apiUrlInput.value = settings.apiUrl;
-  historyEnabledInput.checked = settings.historyMatchingEnabled;
   historyLookbackInput.value = String(settings.historyLookbackDays);
   if (background.state.contract) {
     contractLabel.textContent = `Chain ${background.state.contract.chainId} • Contract ${background.state.contract.contractAddress}`;
@@ -130,16 +128,9 @@ async function loadState(): Promise<void> {
   renderSubscriptionDomains(settings, background);
 }
 
-async function ensureHistoryPermission(enabled: boolean): Promise<void> {
-  if (enabled) {
-    const granted = await chrome.permissions.request({ permissions: ["history"] });
-    if (!granted) throw new Error("History permission is required for offer matching");
-    return;
-  }
-  const hadPermission = await chrome.permissions.contains({ permissions: ["history"] });
-  if (hadPermission) {
-    await chrome.permissions.remove({ permissions: ["history"] });
-  }
+async function ensureHistoryPermission(): Promise<void> {
+  const granted = await chrome.permissions.request({ permissions: ["history"] });
+  if (!granted) throw new Error("History permission is required for offer matching");
 }
 
 settingsForm.addEventListener("submit", (event) => {
@@ -147,18 +138,16 @@ settingsForm.addEventListener("submit", (event) => {
   void (async () => {
     try {
       const apiUrl = normalizeApiUrl(apiUrlInput.value);
-      const historyMatchingEnabled = historyEnabledInput.checked;
       const historyLookbackDays = Number.parseInt(historyLookbackInput.value || "", 10);
       if (!apiUrl) throw new Error("API URL is required");
       if (!Number.isFinite(historyLookbackDays) || historyLookbackDays < 1 || historyLookbackDays > 365) {
         throw new Error("History lookback must be between 1 and 365 days");
       }
 
-      await ensureHistoryPermission(historyMatchingEnabled);
+      await ensureHistoryPermission();
 
       const settings: ExtensionSettings = {
         apiUrl,
-        historyMatchingEnabled,
         historyLookbackDays,
         subscriptionByDomain: readSubscriptionByDomain()
       };
@@ -182,7 +171,6 @@ settingsForm.addEventListener("submit", (event) => {
 
 void loadState().catch(() => {
   apiUrlInput.value = DEFAULT_SETTINGS.apiUrl;
-  historyEnabledInput.checked = DEFAULT_SETTINGS.historyMatchingEnabled;
   historyLookbackInput.value = String(DEFAULT_SETTINGS.historyLookbackDays);
   latestSettings = DEFAULT_SETTINGS;
   renderSubscriptionDomains(DEFAULT_SETTINGS, {
