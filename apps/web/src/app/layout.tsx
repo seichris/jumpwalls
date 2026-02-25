@@ -27,7 +27,8 @@ export const metadata: Metadata = {
   description: "On-chain marketplace for paywalled knowledge digests and Q&A.",
   icons: {
     icon: [
-      { url: "/lock-open.svg", type: "image/svg+xml" },
+      { url: "/lock-open-light.svg", media: "(prefers-color-scheme: light)", type: "image/svg+xml" },
+      { url: "/lock-open-dark.svg", media: "(prefers-color-scheme: dark)", type: "image/svg+xml" },
       { url: "/favicon.ico" },
     ],
     shortcut: ["/favicon.ico"],
