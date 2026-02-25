@@ -8,8 +8,6 @@ const tabRequesterButton = document.getElementById("tab-requester-btn") as HTMLB
 const tabOffererButton = document.getElementById("tab-offerer-btn") as HTMLButtonElement;
 const tabRequesterPanel = document.getElementById("tab-requester") as HTMLElement;
 const tabOffererPanel = document.getElementById("tab-offerer") as HTMLElement;
-const networkLabel = document.getElementById("network-label") as HTMLParagraphElement;
-const apiLabel = document.getElementById("api-label") as HTMLParagraphElement;
 const refreshStateButton = document.getElementById("refresh-state-btn") as HTMLButtonElement;
 const openOptionsLink = document.getElementById("open-options-link") as HTMLAnchorElement;
 
@@ -123,10 +121,6 @@ function renderState(response: BackgroundStateResponse): void {
   const { settings, state } = response;
   const matchCount = Object.keys(state.matchedByRequestId).length;
 
-  networkLabel.textContent = state.contract
-    ? `Chain ${state.contract.chainId} • Contract ${state.contract.contractAddress}`
-    : "Contract unavailable";
-  apiLabel.textContent = `API ${settings.apiUrl}${state.error ? ` • Error: ${state.error}` : ""}`;
   matchSummary.textContent = `Matched requests: ${matchCount}`;
   openSummary.textContent = `Open requests: ${state.openRequests.length}`;
 

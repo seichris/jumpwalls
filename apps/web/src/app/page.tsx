@@ -104,24 +104,26 @@ export default function HomePage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">InfoFi</h1>
           <p className="text-sm text-muted-foreground">
-            On-chain requests, offers, and settlement for paywalled knowledge digests.
+            A marketplace for paywalled content. Fair use only! Agents start at{" "}
+            <a
+              href="https://github.com/seichris/infofi/blob/main/AGENTS.md"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              AGENTS.md
+            </a>
+            .
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} disabled={!mounted}>
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
-          <Button variant="outline" size="icon" onClick={() => fetchData()} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-
           {privyEnabled ? <PrivyConnectWalletButton /> : null}
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
           {!privyEnabled && hasProvider && !address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
           {wrongChain ? (
             <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>
-              Switch To Chain {expectedChainId}
+              Switch to Base Chain
             </Button>
           ) : null}
           {privyEnabled ? (
@@ -130,6 +132,12 @@ export default function HomePage() {
 
           <Button onClick={() => setOpenPostRequest(true)} disabled={!address || wrongChain}>
             Post Request
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} disabled={!mounted}>
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => fetchData()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </header>

@@ -8,6 +8,7 @@ const apiUrlInput = document.getElementById("api-url-input") as HTMLInputElement
 const historyEnabledInput = document.getElementById("history-enabled-input") as HTMLInputElement;
 const historyLookbackInput = document.getElementById("history-lookback-input") as HTMLInputElement;
 const contractLabel = document.getElementById("contract-label") as HTMLParagraphElement;
+const apiStatusLabel = document.getElementById("settings-api-label") as HTMLParagraphElement;
 const settingsResult = document.getElementById("settings-result") as HTMLPreElement;
 
 function showResult(text: string, isError = false): void {
@@ -30,10 +31,11 @@ async function loadState(): Promise<void> {
   historyEnabledInput.checked = settings.historyMatchingEnabled;
   historyLookbackInput.value = String(settings.historyLookbackDays);
   if (background.state.contract) {
-    contractLabel.textContent = `Chain ${background.state.contract.chainId} • ${background.state.contract.contractAddress}`;
+    contractLabel.textContent = `Chain ${background.state.contract.chainId} • Contract ${background.state.contract.contractAddress}`;
   } else {
     contractLabel.textContent = background.state.error || "Contract info unavailable";
   }
+  apiStatusLabel.textContent = `API ${settings.apiUrl}`;
 }
 
 async function ensureHistoryPermission(enabled: boolean): Promise<void> {
@@ -74,8 +76,9 @@ settingsForm.addEventListener("submit", (event) => {
 
       showResult(`Saved. ${Object.keys(refreshed.state.matchedByRequestId).length} matched requests.`);
       contractLabel.textContent = refreshed.state.contract
-        ? `Chain ${refreshed.state.contract.chainId} • ${refreshed.state.contract.contractAddress}`
+        ? `Chain ${refreshed.state.contract.chainId} • Contract ${refreshed.state.contract.contractAddress}`
         : refreshed.state.error || "Contract info unavailable";
+      apiStatusLabel.textContent = `API ${settings.apiUrl}`;
     } catch (error) {
       showResult(toErrorMessage(error), true);
     }
@@ -86,4 +89,5 @@ void loadState().catch(() => {
   apiUrlInput.value = DEFAULT_SETTINGS.apiUrl;
   historyEnabledInput.checked = DEFAULT_SETTINGS.historyMatchingEnabled;
   historyLookbackInput.value = String(DEFAULT_SETTINGS.historyLookbackDays);
+  apiStatusLabel.textContent = `API ${DEFAULT_SETTINGS.apiUrl}`;
 });
