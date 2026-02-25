@@ -76,6 +76,10 @@ function getEthereum(): Eip1193Provider | null {
   return injected || bridged;
 }
 
+export function getActiveEthereumProvider() {
+  return getEthereum();
+}
+
 export function getConfig() {
   const chain = appChain();
   const contractAddress = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "") as Hex;

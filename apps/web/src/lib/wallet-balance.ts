@@ -1,8 +1,8 @@
-import { formatUnits, parseEther, type Address } from "viem";
+import { encodeFunctionData, formatUnits, parseEther, type Address } from "viem";
 
 import { erc20Abi } from "./abi";
 import { ETH_TOKEN, isEthToken, usdcForChain } from "./infofi-contract";
-import { getPublicClient } from "./wallet";
+import { getActiveEthereumProvider, getPublicClient } from "./wallet";
 
 export const MIN_POST_REQUEST_GAS_BUFFER_WEI = parseEther("0.00003");
 export const MIN_HIRE_GAS_BUFFER_WEI = parseEther("0.00002");
@@ -20,31 +20,70 @@ export type WalletBalanceDelta = {
 };
 
 export async function readWalletBalanceSnapshot(address: Address): Promise<WalletBalanceSnapshot> {
-  const client = getPublicClient();
   const usdc = usdcForChain();
-  const ethWei = await client.getBalance({ address });
 
-  let usdcWei: bigint | null = null;
-  if (usdc) {
-    try {
-      usdcWei = await client.readContract({
-        address: usdc as Address,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      });
-    } catch {
-      // Keep funding UX resilient even if token balance read fails.
-      usdcWei = null;
+  try {
+    const client = getPublicClient();
+    const ethWei = await client.getBalance({ address });
+
+    let usdcWei: bigint | null = null;
+    if (usdc) {
+      try {
+        usdcWei = await client.readContract({
+          address: usdc as Address,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        });
+      } catch {
+        // Keep funding UX resilient even if token balance read fails.
+        usdcWei = null;
+      }
     }
-  }
 
-  return {
-    address,
-    ethWei,
-    usdcWei,
-    fetchedAtMs: Date.now(),
-  };
+    return {
+      address,
+      ethWei,
+      usdcWei,
+      fetchedAtMs: Date.now(),
+    };
+  } catch {
+    const provider = getActiveEthereumProvider();
+    if (!provider?.request) throw new Error("No wallet provider available for balance read.");
+
+    const ethHex = await provider.request({
+      method: "eth_getBalance",
+      params: [address, "latest"],
+    });
+    if (typeof ethHex !== "string") throw new Error("Wallet provider returned invalid ETH balance.");
+
+    let usdcWei: bigint | null = null;
+    if (usdc) {
+      try {
+        const data = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        });
+        const usdcHex = await provider.request({
+          method: "eth_call",
+          params: [{ to: usdc, data }, "latest"],
+        });
+        if (typeof usdcHex === "string") {
+          usdcWei = BigInt(usdcHex);
+        }
+      } catch {
+        usdcWei = null;
+      }
+    }
+
+    return {
+      address,
+      ethWei: BigInt(ethHex),
+      usdcWei,
+      fetchedAtMs: Date.now(),
+    };
+  }
 }
 
 export function diffWalletBalanceSnapshots(
@@ -93,4 +132,3 @@ export function tokenBalanceForSnapshot(snapshot: WalletBalanceSnapshot | null, 
   if (token.toLowerCase() === ETH_TOKEN.toLowerCase()) return snapshot.ethWei;
   return null;
 }
-
