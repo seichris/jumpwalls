@@ -8,134 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Repo {
-  id                String   @id @default(cuid())
-  repoHash          String   @unique
-  maintainerAddress String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  bounties Bounty[]
-}
-
-model Bounty {
-  id          String   @id @default(cuid())
-  bountyId    String   @unique
-  repoHash    String
-  issueNumber Int
-  metadataURI String
-  status      String
-
-  chainId         Int
-  contractAddress String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  repo Repo @relation(fields: [repoHash], references: [repoHash])
-
-  assets   BountyAsset[]
-  fundings Funding[]
-  claims   Claim[]
-  payouts  Payout[]
-  refunds  Refund[]
-  linkedPullRequests LinkedPullRequest[]
-
-  @@unique([repoHash, issueNumber, chainId, contractAddress])
-}
-
-model LinkedPullRequest {
-  id        String   @id @default(cuid())
-  bountyId  String
-  prUrl     String
-  author    String?
-  createdAt DateTime @default(now())
-
-  bounty Bounty @relation(fields: [bountyId], references: [bountyId])
-
-  @@unique([bountyId, prUrl])
-}
-
-model BountyAsset {
-  id        String @id @default(cuid())
-  bountyId  String
-  token     String // 0x... or 0x000... for ETH
-  escrowed  String @default("0")
-  funded    String @default("0")
-  paid      String @default("0")
-  updatedAt DateTime @updatedAt
-
-  bounty Bounty @relation(fields: [bountyId], references: [bountyId])
-
-  @@unique([bountyId, token])
-}
-
-model Funding {
-  id          String   @id @default(cuid())
-  bountyId    String
-  token       String
-  funder      String
-  amountWei   String
-  lockedUntil Int
-  txHash      String
-  logIndex    Int
-  blockNumber Int
-  createdAt   DateTime @default(now())
-
-  bounty Bounty @relation(fields: [bountyId], references: [bountyId])
-
-  @@unique([txHash, logIndex])
-}
-
-model Claim {
-  id          String   @id @default(cuid())
-  bountyId    String
-  claimId     Int
-  claimer     String
-  metadataURI String
-  txHash      String
-  logIndex    Int
-  blockNumber Int
-  createdAt   DateTime @default(now())
-
-  bounty Bounty @relation(fields: [bountyId], references: [bountyId])
-
-  @@unique([bountyId, claimId])
-  @@unique([txHash, logIndex])
-}
-
-model Payout {
-  id          String   @id @default(cuid())
-  bountyId    String
-  token       String
-  recipient   String
-  amountWei   String
-  txHash      String
-  logIndex    Int
-  blockNumber Int
-  createdAt   DateTime @default(now())
-
-  bounty Bounty @relation(fields: [bountyId], references: [bountyId])
-
-  @@unique([txHash, logIndex])
-}
-
-model Refund {
-  id          String   @id @default(cuid())
-  bountyId    String
-  token       String
-  funder      String
-  amountWei   String
-  txHash      String
-  logIndex    Int
-  blockNumber Int
-  createdAt   DateTime @default(now())
-
-  bounty Bounty @relation(fields: [bountyId], references: [bountyId])
-
-  @@unique([txHash, logIndex])
-}
-
 model InfoFiRequest {
   id           String   @id @default(cuid())
   requestId    String   @unique
@@ -172,20 +44,20 @@ model InfoFiOffer {
 }
 
 model InfoFiJob {
-  id              String   @id @default(cuid())
-  jobId           String   @unique
-  requestId       String   @unique
-  offerId         String   @unique
-  requester       String
-  consultant      String
-  paymentToken    String
-  amountWei       String
-  remainingWei    String
-  digestHash      String?
-  metadataURI     String?
-  proofTypeOrURI  String?
-  hiredAt         DateTime
-  deliveredAt     DateTime?
+  id             String   @id @default(cuid())
+  jobId          String   @unique
+  requestId      String   @unique
+  offerId        String   @unique
+  requester      String
+  consultant     String
+  paymentToken   String
+  amountWei      String
+  remainingWei   String
+  digestHash     String?
+  metadataURI    String?
+  proofTypeOrURI String?
+  hiredAt        DateTime
+  deliveredAt    DateTime?
 
   chainId         Int
   contractAddress String
@@ -239,23 +111,23 @@ model InfoFiRating {
 }
 
 model InfoFiDigest {
-  id               String   @id @default(cuid())
-  jobId            String
-  sourceURI        String?
-  question         String?
-  digest           String
-  digestHash       String
-  metadataURI      String   @unique
-  consultantAddress String
-  proof            String?
-  citationsJson    String?
-  fairUseVerdict   String?
-  fairUseRiskLevel String?
-  fairUseScore     Int?
+  id                   String   @id @default(cuid())
+  jobId                String
+  sourceURI            String?
+  question             String?
+  digest               String
+  digestHash           String
+  metadataURI          String   @unique
+  consultantAddress    String
+  proof                String?
+  citationsJson        String?
+  fairUseVerdict       String?
+  fairUseRiskLevel     String?
+  fairUseScore         Int?
   fairUsePolicyVersion String?
-  fairUseReportJson String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  fairUseReportJson    String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([jobId])
 }
@@ -268,45 +140,4 @@ model IndexerState {
   updatedAt       DateTime @updatedAt
 
   @@unique([chainId, contractAddress])
-}
-
-model GithubSession {
-  id            String   @id
-  accessToken   String
-  userLogin     String
-  userId        Int
-  userAvatarUrl String?
-  createdAt     DateTime @default(now())
-  expiresAt     DateTime
-
-  @@index([expiresAt])
-}
-
-model ApiSession {
-  id                  String   @id @default(cuid())
-  tokenHash           String   @unique
-  githubAccessTokenEnc String
-  userLogin           String
-  userId              Int
-  userAvatarUrl       String?
-  label               String?
-  createdAt           DateTime @default(now())
-  expiresAt           DateTime
-
-  @@index([expiresAt])
-  @@index([userLogin])
-}
-
-model GithubDeviceAuth {
-  id             String   @id @default(cuid())
-  deviceCodeHash String   @unique
-  userCode       String
-  verificationUri String
-  interval       Int
-  scope          String?
-  label          String?
-  createdAt      DateTime @default(now())
-  expiresAt      DateTime
-
-  @@index([expiresAt])
 }

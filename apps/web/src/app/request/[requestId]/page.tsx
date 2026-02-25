@@ -214,7 +214,7 @@ export default function RequestDetailPage() {
           <Button variant="outline" asChild>
             <Link href="/">Back</Link>
           </Button>
-          <BrandLockIcon className="size-6 text-primary" />
+          <BrandLockIcon className="size-6" />
           <h1 className="text-2xl font-semibold">Request</h1>
         </div>
         <div className="flex items-center gap-2">

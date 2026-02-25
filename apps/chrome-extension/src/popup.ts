@@ -1,5 +1,5 @@
 import { encodeFunctionData, isAddress, isHex, type Hex } from "viem";
-import { infoFiAbi, infoFiOfferId, infoFiRequestId } from "@gh-bounties/shared";
+import { infoFiAbi, infoFiOfferId, infoFiRequestId } from "@infofi/shared";
 import { NATIVE_TOKEN } from "./constants";
 import { extractDomainFromSource } from "./domain";
 import type { BackgroundStateResponse, EthereumBridgeResponse, OpenRequest } from "./types";

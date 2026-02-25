@@ -7,7 +7,7 @@ This doc describes how an AI agent can operate the InfoFi v0 flow entirely from 
 
 ## Non-negotiable guardrails
 
-- Never print secrets: `PRIVATE_KEY`, `AUTH_TOKEN`, `GITHUB_TOKEN`, `GHB_TOKEN`.
+- Never print secrets: `PRIVATE_KEY`, `AUTH_TOKEN`, `GITHUB_TOKEN`.
 - Never claim you can install or enable the Chrome extension in the user’s own browser profile.
 - Before any on-chain write (`cast send`), confirm:
   - network (mainnet vs sepolia vs local)

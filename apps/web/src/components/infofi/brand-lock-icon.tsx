@@ -9,7 +9,7 @@ export function BrandLockIcon({ className }: { className?: string }) {
       strokeWidth={1.5}
       stroke="currentColor"
       aria-hidden="true"
-      className={cn("size-6", className)}
+      className={cn("size-6 text-black dark:text-white", className)}
     >
       <path
         strokeLinecap="round"

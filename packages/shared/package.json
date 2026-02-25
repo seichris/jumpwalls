@@ -1,5 +1,5 @@
 {
-  "name": "@gh-bounties/shared",
+  "name": "@infofi/shared",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "dev": "echo \"@gh-bounties/shared has no dev server\"",
+    "dev": "echo \"@infofi/shared has no dev server\"",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "format": "prettier -w ."

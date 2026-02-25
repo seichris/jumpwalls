@@ -1,4 +1,4 @@
-import { infoFiJobId, infoFiOfferId, infoFiRequestId, usdcAddressForChainId } from "@gh-bounties/shared";
+import { infoFiJobId, infoFiOfferId, infoFiRequestId, usdcAddressForChainId } from "@infofi/shared";
 import { formatUnits, isAddress, keccak256, parseEther, parseUnits, stringToHex, type Address, type Hex } from "viem";
 import { erc20Abi, infoFiAbi } from "./abi";
 import { ensureWalletChain, getConfig, getPublicClient, getWalletClient } from "./wallet";

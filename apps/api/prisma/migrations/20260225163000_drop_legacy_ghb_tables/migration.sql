@@ -1,0 +1,15 @@
+PRAGMA foreign_keys=OFF;
+
+DROP TABLE IF EXISTS "LinkedPullRequest";
+DROP TABLE IF EXISTS "BountyAsset";
+DROP TABLE IF EXISTS "Funding";
+DROP TABLE IF EXISTS "Claim";
+DROP TABLE IF EXISTS "Payout";
+DROP TABLE IF EXISTS "Refund";
+DROP TABLE IF EXISTS "Bounty";
+DROP TABLE IF EXISTS "Repo";
+DROP TABLE IF EXISTS "GithubSession";
+DROP TABLE IF EXISTS "ApiSession";
+DROP TABLE IF EXISTS "GithubDeviceAuth";
+
+PRAGMA foreign_keys=ON;

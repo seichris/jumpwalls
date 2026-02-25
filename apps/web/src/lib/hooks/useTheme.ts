@@ -3,10 +3,33 @@ import { useCallback, useEffect, useState } from "react";
 export type ThemeMode = "light" | "dark";
 
 const STORAGE_KEY = "infofi-theme";
+const LIGHT_FAVICON = "/favicon_black.ico";
+const DARK_FAVICON = "/favicon_white.ico";
+
+function updateFavicon(theme: ThemeMode) {
+  if (typeof document === "undefined") return;
+  const href = theme === "dark" ? DARK_FAVICON : LIGHT_FAVICON;
+  const iconLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"]'));
+
+  if (iconLinks.length === 0) {
+    const fallbackIcon = document.createElement("link");
+    fallbackIcon.rel = "icon";
+    fallbackIcon.href = href;
+    document.head.appendChild(fallbackIcon);
+    return;
+  }
+
+  for (const link of iconLinks) {
+    link.href = href;
+    link.media = "all";
+    link.type = "image/x-icon";
+  }
+}
 
 function applyTheme(theme: ThemeMode) {
   if (typeof document === "undefined") return;
   document.documentElement.classList.toggle("dark", theme === "dark");
+  updateFavicon(theme);
 }
 
 export function useTheme() {

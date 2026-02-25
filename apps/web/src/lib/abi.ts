@@ -1,5 +1,5 @@
 import { parseAbi } from "viem";
-import { infoFiAbi } from "@gh-bounties/shared";
+import { infoFiAbi } from "@infofi/shared";
 
 export { infoFiAbi };
 

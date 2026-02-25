@@ -11,7 +11,7 @@
     "format": "prettier -w ."
   },
   "dependencies": {
-    "@gh-bounties/shared": "workspace:^",
+    "@infofi/shared": "workspace:^",
     "viem": "^2.45.0"
   },
   "devDependencies": {

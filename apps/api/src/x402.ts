@@ -1,4 +1,4 @@
-import { NATIVE_TOKEN, usdcAddressForChainId } from "@gh-bounties/shared";
+import { NATIVE_TOKEN, usdcAddressForChainId } from "@infofi/shared";
 import { createPublicClient, fallback, http, isAddress, parseAbiItem, parseEventLogs, type Address, type Hex } from "viem";
 
 const NATIVE_TOKEN_LOWER = NATIVE_TOKEN.toLowerCase();

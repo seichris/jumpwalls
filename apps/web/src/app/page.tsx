@@ -103,7 +103,7 @@ export default function HomePage() {
       <header className="mb-6 flex flex-col gap-4 border-b pb-4 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <BrandLockIcon className="size-7 text-primary" />
+            <BrandLockIcon className="size-7" />
             <h1 className="text-3xl font-semibold tracking-tight">InfoFi</h1>
           </div>
           <p className="text-sm text-muted-foreground">

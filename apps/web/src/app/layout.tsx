@@ -27,11 +27,11 @@ export const metadata: Metadata = {
   description: "On-chain marketplace for paywalled knowledge digests and Q&A.",
   icons: {
     icon: [
-      { url: "/lock-open-light.svg", media: "(prefers-color-scheme: light)", type: "image/svg+xml" },
-      { url: "/lock-open-dark.svg", media: "(prefers-color-scheme: dark)", type: "image/svg+xml" },
-      { url: "/favicon.ico" },
+      { url: "/favicon_black.ico", media: "(prefers-color-scheme: light)", type: "image/x-icon" },
+      { url: "/favicon_white.ico", media: "(prefers-color-scheme: dark)", type: "image/x-icon" },
+      { url: "/favicon_black.ico", type: "image/x-icon" },
     ],
-    shortcut: ["/favicon.ico"],
+    shortcut: ["/favicon_black.ico"],
   },
   keywords: [
     "InfoFi",
@@ -88,6 +88,21 @@ export default function RootLayout({
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       const theme = stored || (prefersDark ? "dark" : "light");
       if (theme === "dark") document.documentElement.classList.add("dark");
+      const favicon = theme === "dark" ? "/favicon_white.ico" : "/favicon_black.ico";
+      const iconLinks = Array.from(document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]'));
+      if (iconLinks.length === 0) {
+        const link = document.createElement("link");
+        link.rel = "icon";
+        link.href = favicon;
+        link.type = "image/x-icon";
+        document.head.appendChild(link);
+      } else {
+        iconLinks.forEach((link) => {
+          link.href = favicon;
+          link.media = "all";
+          link.type = "image/x-icon";
+        });
+      }
     } catch {}
   `;
 
