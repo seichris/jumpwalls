@@ -33,6 +33,16 @@ function retryAfterMsFromError(err: unknown): number | null {
   return 300_000;
 }
 
+function rpcHosts(urls: string[]) {
+  return urls.map((url) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  });
+}
+
 async function main() {
   const env = loadEnv();
   // Prisma reads DATABASE_URL from process.env at construction time.
@@ -912,7 +922,12 @@ async function main() {
           const retryAfterMs = retryAfterMsFromError(err);
           if (retryAfterMs) delayMs = Math.max(delayMs, retryAfterMs);
           app.log.error(
-            { err: err?.shortMessage ?? err?.message ?? String(err), delayMs, rpcUrl: env.RPC_URL },
+            {
+              err: err?.shortMessage ?? err?.message ?? String(err),
+              errorDetails: err?.details,
+              delayMs,
+              rpcHosts: rpcHosts(env.RPC_URLS)
+            },
             "indexer failed to start; retrying"
           );
           await sleep(delayMs);

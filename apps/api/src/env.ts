@@ -116,6 +116,20 @@ function parseRpcUrls(value: string | undefined) {
     .filter(Boolean);
 }
 
+function dedupeRpcUrls(urls: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const rawUrl of urls) {
+    const url = sanitizeRpcUrl(rawUrl);
+    if (!url) continue;
+    const key = url.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(url);
+  }
+  return out;
+}
+
 export function loadEnv(): Env {
   dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || "../../.env" });
   const parsed = EnvSchema.safeParse(process.env);
@@ -127,19 +141,21 @@ export function loadEnv(): Env {
   }
   const env = parsed.data;
 
-  let rpcUrls = parseRpcUrls(env.RPC_URL);
-  if (rpcUrls.length === 0) {
-    if (env.CHAIN_ID === 1) {
-      rpcUrls = parseRpcUrls(env.RPC_URLS_ETHEREUM_MAINNET);
-      if (rpcUrls.length === 0) rpcUrls = parseRpcUrls(env.RPC_URL_ETHEREUM_MAINNET);
-    } else if (env.CHAIN_ID === 8453) {
-      rpcUrls = parseRpcUrls(env.RPC_URLS_BASE_MAINNET);
-      if (rpcUrls.length === 0) rpcUrls = parseRpcUrls(env.RPC_URL_BASE_MAINNET);
-    } else if (env.CHAIN_ID === 11155111) {
-      rpcUrls = parseRpcUrls(env.RPC_URLS_ETHEREUM_SEPOLIA);
-      if (rpcUrls.length === 0) rpcUrls = parseRpcUrls(env.RPC_URL_ETHEREUM_SEPOLIA);
-    }
+  const explicitRpcUrls = parseRpcUrls(env.RPC_URL);
+  let chainRpcUrls: string[] = [];
+  if (env.CHAIN_ID === 1) {
+    chainRpcUrls = parseRpcUrls(env.RPC_URLS_ETHEREUM_MAINNET);
+    if (chainRpcUrls.length === 0) chainRpcUrls = parseRpcUrls(env.RPC_URL_ETHEREUM_MAINNET);
+  } else if (env.CHAIN_ID === 8453) {
+    chainRpcUrls = parseRpcUrls(env.RPC_URLS_BASE_MAINNET);
+    if (chainRpcUrls.length === 0) chainRpcUrls = parseRpcUrls(env.RPC_URL_BASE_MAINNET);
+  } else if (env.CHAIN_ID === 11155111) {
+    chainRpcUrls = parseRpcUrls(env.RPC_URLS_ETHEREUM_SEPOLIA);
+    if (chainRpcUrls.length === 0) chainRpcUrls = parseRpcUrls(env.RPC_URL_ETHEREUM_SEPOLIA);
   }
+
+  // Keep explicit RPC_URL first, then append chain-specific fallbacks.
+  const rpcUrls = dedupeRpcUrls([...explicitRpcUrls, ...chainRpcUrls]);
 
   const rpcUrl = rpcUrls[0] || "";
 
