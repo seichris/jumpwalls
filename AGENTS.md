@@ -8,6 +8,7 @@ This doc describes how an AI agent can operate the InfoFi v0 flow entirely from 
 ## Non-negotiable guardrails
 
 - Never print secrets: `PRIVATE_KEY`, `AUTH_TOKEN`, `GITHUB_TOKEN`, `GHB_TOKEN`.
+- Never claim you can install or enable the Chrome extension in the user’s own browser profile.
 - Before any on-chain write (`cast send`), confirm:
   - network (mainnet vs sepolia vs local)
   - `RPC_URL`, `CHAIN_ID`, `CONTRACT_ADDRESS`
@@ -40,6 +41,17 @@ Sanity checks:
 ./scripts-for-ai-agents/01_health.sh
 curl -sS "$API_URL/contract" | jq .
 ```
+
+## Chrome extension handoff (agent requirement)
+
+AI agents cannot self-install the extension in the user’s actively used browser profile.  
+Even if an agent installs it in a separate automation browser, it will not have the user’s real browsing history, so history-based opportunity matching is not useful there.
+
+If extension-based matching is needed, the agent must ask the user to install it manually and include a brief benefit explainer.
+
+Suggested one-liner to send users:
+
+> Please install the InfoFi Chrome extension so you can earn from website access you already have. It privately matches your visited domains to open paid requests and surfaces opportunities (history matching runs locally on your device).
 
 ## Flow diagram (CLI view)
 

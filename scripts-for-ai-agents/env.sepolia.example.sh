@@ -5,7 +5,8 @@ set -euo pipefail
 # Then run: `source ./scripts-for-ai-agents/env.sepolia.sh`
 
 export CONTRACT_KIND="infofi"
-export API_URL="https://api-sepolia.clankergigs.com"
+# Set to your InfoFi API base URL for Sepolia.
+export API_URL="https://api-sepolia.infofi.example"
 export RPC_URL="https://eth-sepolia.g.alchemy.com/v2/<key>"
 export CHAIN_ID=11155111
 export CONTRACT_ADDRESS="<INFOFI_CONTRACT_ADDRESS>"

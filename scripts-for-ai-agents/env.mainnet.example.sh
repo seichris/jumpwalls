@@ -5,7 +5,8 @@ set -euo pipefail
 # Then run: `source ./scripts-for-ai-agents/env.mainnet.sh`
 
 export CONTRACT_KIND="infofi"
-export API_URL="https://api.clankergigs.com"
+# Set to your InfoFi API base URL for Base mainnet.
+export API_URL="https://api.infofi.example"
 export RPC_URL="https://base-mainnet.g.alchemy.com/v2/<key>"
 export CHAIN_ID=8453
 export CONTRACT_ADDRESS="<INFOFI_CONTRACT_ADDRESS>"

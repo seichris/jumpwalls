@@ -1,14 +1,51 @@
 # InfoFi
 
-InfoFi is an on-chain marketplace for research digests:
+InfoFi is an agent-native marketplace for source-grounded answers from paywalled or access-restricted content.
 
-1. A requester posts a question and max budget.
-2. A consultant posts an offer.
+1. A requester posts a source URI, question, and max budget.
+2. A provider posts an offer.
 3. The requester hires the offer and funds escrow (ETH or ERC-20).
-4. The consultant stores digest content via API and delivers `digestHash + metadataURI` on-chain.
+4. The provider stores digest content via API and delivers `digestHash + metadataURI` on-chain.
 5. The requester settles escrow (payout/refund), and both sides can rate the job.
+6. Optional: x402 citations can be verified and reimbursed during settlement.
+
+Contract/event fields currently use `consultant` for this role; docs use `provider`.
 
 This repository is the InfoFi v0 codebase.
+
+## Pitch
+
+InfoFi replaces subscription lock-in with pay-per-question micropayments for agents.
+Instead of needing direct account access to every source, requesters pay providers for specific source-grounded answers, with verifiable delivery and escrowed settlement.
+
+## Architecture
+
+- `contracts/src/InfoFi.sol`:
+  - on-chain request/offer/hire/deliver/rate flow
+  - ETH/ERC-20 escrow
+  - requester-authorized payout/refund settlement
+- `apps/api/`:
+  - chain indexer + query endpoints (`/requests`, `/offers`, `/jobs`)
+  - digest storage (`POST /digests` -> `metadataURI`)
+  - fair-use screening (`allow|warn|block`, optional Gemini second pass)
+  - x402 reimbursement preview generation from citations
+- `apps/web/`:
+  - full UI for posting, hiring, delivering, settling, ratings, and reimbursement-assisted payouts
+- `apps/chrome-extension/`:
+  - requester posting and provider offer flow from popup
+  - open-request discovery + optional local history/domain matching
+  - local-first matching logic: browsing history stays on-device
+- `scripts-for-ai-agents/`:
+  - terminal-first end-to-end workflow for autonomous agents
+
+## Benefits
+
+- Pay only for answers you need instead of full subscriptions.
+- Source-grounded delivery: on-chain digest hash + metadata URI create an auditable trail.
+- Better trust and accountability via escrow, deterministic IDs, and bilateral ratings.
+- Fair-use guardrails reduce risk for digest submissions.
+- x402 support can route part of settlement back to original content creators.
+- Extension-driven discovery helps bootstrap supply from users who already have access.
 
 ## Repo layout
 
@@ -130,7 +167,7 @@ Scripts are in `scripts-for-ai-agents/`:
 - `01_health.sh`: API health + contract check
 - `02_ids.sh`: compute `requestId` / `offerId` / `jobId`
 - `03_post_request.sh`: requester posts request
-- `04_post_offer.sh`: consultant posts offer
+- `04_post_offer.sh`: provider posts offer
 - `05_hire_offer_eth.sh`: requester hires with ETH
 - `06_hire_offer_token.sh`: requester hires with ERC-20
 - `07_store_digest.sh`: store digest off-chain via API
@@ -153,6 +190,14 @@ pnpm -C apps/chrome-extension build
 ```
 
 Load `apps/chrome-extension/dist` in `chrome://extensions` (Developer mode -> Load unpacked).
+
+Extension behavior:
+
+- Requester flow from popup (`postRequest`)
+- Provider flow from popup (`postOffer`)
+- Open request discovery from API
+- Optional history/domain matching for opportunities (requires explicit Chrome `history` permission)
+- Matching runs locally on-device; extension does not upload browsing history
 
 ## Test commands
 
