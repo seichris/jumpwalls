@@ -6,7 +6,6 @@ import * as React from "react";
 import type { Address } from "viem";
 import { parseEther, parseUnits } from "viem";
 
-import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
 import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,14 +120,11 @@ export default function NewRequestPage() {
           <h1 className="text-2xl font-semibold">New Request</h1>
         </div>
         <div className="flex items-center gap-2">
-          {privyEnabled ? <PrivyConnectWalletButton /> : null}
-          {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
-          {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
           {privyEnabled ? (
-            <PrivyFundWalletDialog
+            <PrivyConnectWalletButton
+              expectedChainId={expectedChainId}
               walletAddress={address}
               walletChainId={chainId}
-              expectedChainId={expectedChainId}
               onFundingOutcome={(outcome) => {
                 if (outcome.status === "error") {
                   setFundingFeedback({
@@ -148,6 +144,8 @@ export default function NewRequestPage() {
               }}
             />
           ) : null}
+          {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
+          {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
         </div>
       </header>
 

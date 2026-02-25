@@ -1,23 +1,88 @@
 "use client";
 
 import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { CreditCard } from "lucide-react";
 import * as React from "react";
-import type { Address } from "viem";
+import { formatUnits, type Address } from "viem";
 
+import { PrivyFundWalletDialog, type PrivyFundingOutcome } from "@/components/infofi/privy-fund-wallet-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { logUiAction } from "@/lib/infofi-ux";
-import { formatWalletFundingSummary, readWalletBalanceSnapshot } from "@/lib/wallet-balance";
+import { readWalletBalanceSnapshot, type WalletBalanceSnapshot } from "@/lib/wallet-balance";
 
 function shortHash(value: string) {
   return `${value.slice(0, 8)}...${value.slice(-6)}`;
 }
 
-export function PrivyConnectWalletButton() {
+function fnv1a(input: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function mulberry32(seed: number) {
+  let state = seed;
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function walletIdenticon(address: string) {
+  const seed = fnv1a(address.toLowerCase());
+  const random = mulberry32(seed);
+  const hue = seed % 360;
+  const fill = `hsl(${hue} 65% 45%)`;
+  const accent = `hsl(${(hue + 38) % 360} 70% 60%)`;
+  const background = `hsl(${(hue + 210) % 360} 22% 18%)`;
+
+  const cells: Array<{ x: number; y: number; accent: boolean }> = [];
+  for (let y = 0; y < 5; y += 1) {
+    for (let x = 0; x < 3; x += 1) {
+      if (random() < 0.45) continue;
+      const useAccent = random() > 0.78;
+      cells.push({ x, y, accent: useAccent });
+      if (x !== 2) {
+        cells.push({ x: 4 - x, y, accent: useAccent });
+      }
+    }
+  }
+
+  return { fill, accent, background, cells };
+}
+
+function WalletIdenticon({ address }: { address: string }) {
+  const icon = React.useMemo(() => walletIdenticon(address), [address]);
+  return (
+    <svg viewBox="0 0 5 5" className="h-4 w-4 rounded-sm border border-border/60 bg-background" aria-hidden="true">
+      <rect x={0} y={0} width={5} height={5} fill={icon.background} />
+      {icon.cells.map((cell, index) => (
+        <rect key={`${cell.x}-${cell.y}-${index}`} x={cell.x} y={cell.y} width={1} height={1} fill={cell.accent ? icon.accent : icon.fill} />
+      ))}
+    </svg>
+  );
+}
+
+type PrivyConnectWalletButtonProps = {
+  expectedChainId?: number;
+  walletAddress?: Address | null;
+  walletChainId?: number | null;
+  onFundingOutcome?: (outcome: PrivyFundingOutcome) => void;
+};
+
+export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walletChainId, onFundingOutcome }: PrivyConnectWalletButtonProps) {
   const { ready, authenticated, login } = usePrivy();
   const { wallets } = useWallets();
   const [error, setError] = React.useState<string | null>(null);
   const [balanceSummary, setBalanceSummary] = React.useState("Loading balances...");
+  const [balanceSnapshot, setBalanceSnapshot] = React.useState<WalletBalanceSnapshot | null>(null);
 
   const privyWalletAddress = React.useMemo(() => {
     const wallet = wallets.find((candidate) => candidate.type === "ethereum");
@@ -28,6 +93,7 @@ export function PrivyConnectWalletButton() {
   React.useEffect(() => {
     if (!privyWalletAddress) {
       setBalanceSummary("Loading balances...");
+      setBalanceSnapshot(null);
       return;
     }
 
@@ -35,9 +101,17 @@ export function PrivyConnectWalletButton() {
     async function refreshBalances() {
       try {
         const snapshot = await readWalletBalanceSnapshot(privyWalletAddress as Address);
-        if (!cancelled) setBalanceSummary(formatWalletFundingSummary(snapshot));
+        if (!cancelled) {
+          setBalanceSnapshot(snapshot);
+          const eth = Number(formatUnits(snapshot.ethWei, 18)).toFixed(6);
+          const usdc = snapshot.usdcWei === null ? "-" : Number(formatUnits(snapshot.usdcWei, 6)).toFixed(2);
+          setBalanceSummary(`${eth} ETH, ${usdc} USDC`);
+        }
       } catch {
-        if (!cancelled) setBalanceSummary("Balance unavailable");
+        if (!cancelled) {
+          setBalanceSnapshot(null);
+          setBalanceSummary("Balance unavailable");
+        }
       }
     }
 
@@ -61,9 +135,66 @@ export function PrivyConnectWalletButton() {
   }
 
   if (privyWalletAddress) {
+    const resolvedWalletAddress = walletAddress || (privyWalletAddress as Address);
+    const canShowFundingAction = typeof expectedChainId === "number";
     return (
-      <Badge variant="secondary" className="font-mono">
-        Wallet: {shortHash(privyWalletAddress)} | {balanceSummary}
+      <Badge variant="secondary" className="font-mono gap-1.5">
+        <span className="inline-flex items-center gap-1.5">
+          <WalletIdenticon address={privyWalletAddress} />
+          <span>{shortHash(privyWalletAddress)} |</span>
+        </span>
+        {balanceSnapshot ? (
+          <span className="inline-flex items-center gap-1">
+            <span>{Number(formatUnits(balanceSnapshot.ethWei, 18)).toFixed(6)} ETH,</span>
+            <span className="inline-flex items-center gap-1">
+              <span>{balanceSnapshot.usdcWei === null ? "-" : Number(formatUnits(balanceSnapshot.usdcWei, 6)).toFixed(2)} USDC</span>
+              {canShowFundingAction ? (
+                <PrivyFundWalletDialog
+                  walletAddress={resolvedWalletAddress}
+                  walletChainId={walletChainId}
+                  expectedChainId={expectedChainId}
+                  onFundingOutcome={onFundingOutcome}
+                  renderTrigger={({ disabled, openDialog }) => (
+                    <button
+                      type="button"
+                      title="Fund Wallet With Card"
+                      aria-label="Fund Wallet With Card"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={disabled}
+                      onClick={openDialog}
+                    >
+                      <CreditCard className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                />
+              ) : null}
+            </span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            <span>{balanceSummary}</span>
+            {canShowFundingAction ? (
+              <PrivyFundWalletDialog
+                walletAddress={resolvedWalletAddress}
+                walletChainId={walletChainId}
+                expectedChainId={expectedChainId}
+                onFundingOutcome={onFundingOutcome}
+                renderTrigger={({ disabled, openDialog }) => (
+                  <button
+                    type="button"
+                    title="Fund Wallet With Card"
+                    aria-label="Fund Wallet With Card"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={disabled}
+                    onClick={openDialog}
+                  >
+                    <CreditCard className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              />
+            ) : null}
+          </span>
+        )}
       </Badge>
     );
   }

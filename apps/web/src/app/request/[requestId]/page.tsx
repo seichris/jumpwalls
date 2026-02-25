@@ -7,7 +7,6 @@ import type { Address, Hex } from "viem";
 
 import { PostOfferDialog } from "@/components/infofi/post-offer-dialog";
 import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
-import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
 import { UpdateRequestMaxDialog } from "@/components/infofi/update-request-max-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -217,14 +216,11 @@ export default function RequestDetailPage() {
           <h1 className="text-2xl font-semibold">Request</h1>
         </div>
         <div className="flex items-center gap-2">
-          {privyEnabled ? <PrivyConnectWalletButton /> : null}
-          {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
-          {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
           {privyEnabled ? (
-            <PrivyFundWalletDialog
+            <PrivyConnectWalletButton
+              expectedChainId={expectedChainId}
               walletAddress={address}
               walletChainId={chainId}
-              expectedChainId={expectedChainId}
               onFundingOutcome={(outcome) => {
                 if (!data) return;
                 if (outcome.status === "error") {
@@ -264,6 +260,8 @@ export default function RequestDetailPage() {
               }}
             />
           ) : null}
+          {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
+          {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
           <Button variant="outline" onClick={() => fetchRequest()}>Refresh</Button>
           {data && data.status.toUpperCase() === "OPEN" ? (
             <Button onClick={() => setOpenPostOffer(true)} disabled={!address || wrongChain}>

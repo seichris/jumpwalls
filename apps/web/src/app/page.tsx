@@ -7,7 +7,6 @@ import { Moon, RefreshCw, Sun } from "lucide-react";
 
 import { PostRequestDialog } from "@/components/infofi/post-request-dialog";
 import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
-import { PrivyFundWalletDialog } from "@/components/infofi/privy-fund-wallet-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,16 +117,15 @@ export default function HomePage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {privyEnabled ? <PrivyConnectWalletButton /> : null}
+          {privyEnabled ? (
+            <PrivyConnectWalletButton expectedChainId={expectedChainId} walletAddress={address} walletChainId={chainId} />
+          ) : null}
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
           {!privyEnabled && hasProvider && !address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
           {wrongChain ? (
             <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>
               Switch to Base Chain
             </Button>
-          ) : null}
-          {privyEnabled ? (
-            <PrivyFundWalletDialog walletAddress={address} walletChainId={chainId} expectedChainId={expectedChainId} />
           ) : null}
 
           <Button onClick={() => setOpenPostRequest(true)} disabled={!address || wrongChain}>

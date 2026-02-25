@@ -35,6 +35,11 @@ export type PrivyFundingOutcome = {
   errorMessage?: string;
 };
 
+export type PrivyFundWalletDialogTriggerProps = {
+  disabled: boolean;
+  openDialog: () => void;
+};
+
 function hasPositiveDelta(delta: WalletBalanceDelta) {
   if (delta.ethWeiDelta !== null && delta.ethWeiDelta > 0n) return true;
   if (delta.usdcWeiDelta !== null && delta.usdcWeiDelta > 0n) return true;
@@ -46,11 +51,13 @@ export function PrivyFundWalletDialog({
   walletChainId,
   expectedChainId,
   onFundingOutcome,
+  renderTrigger,
 }: {
   walletAddress: Address | null;
   walletChainId?: number | null;
   expectedChainId: number;
   onFundingOutcome?: (outcome: PrivyFundingOutcome) => void;
+  renderTrigger?: (props: PrivyFundWalletDialogTriggerProps) => React.ReactNode;
 }) {
   const privyEnabled = isPrivyFeatureEnabled();
   const chainSupported = isPrivyFundingSupportedChain(expectedChainId);
@@ -92,6 +99,14 @@ export function PrivyFundWalletDialog({
   if (!privyEnabled) return null;
 
   const disabled = submitting || walletChainMismatch;
+  const openDialog = () => {
+    setOpen(true);
+    logUiAction("privy_funding_opened", {
+      expectedChainId,
+      walletAddress: targetAddress || null,
+      walletChainId,
+    });
+  };
 
   async function readBalancesWithRetry(address: Address, before: WalletBalanceSnapshot | null) {
     let latest: WalletBalanceSnapshot | null = null;
@@ -249,20 +264,13 @@ export function PrivyFundWalletDialog({
 
   return (
     <>
-      <Button
-        variant="outline"
-        onClick={() => {
-          setOpen(true);
-          logUiAction("privy_funding_opened", {
-            expectedChainId,
-            walletAddress: targetAddress || null,
-            walletChainId,
-          });
-        }}
-        disabled={disabled}
-      >
-        Fund With Card
-      </Button>
+      {renderTrigger ? (
+        renderTrigger({ disabled, openDialog })
+      ) : (
+        <Button variant="outline" onClick={openDialog} disabled={disabled}>
+          Fund With Card
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
