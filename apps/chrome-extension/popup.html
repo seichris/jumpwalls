@@ -3,54 +3,55 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>InfoFi Helper</title>
+    <title>InfoFi</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="panel">
       <header class="panel-header">
         <div class="brand">
-          <img src="./assets/icons/icon-32.png" alt="" width="22" height="22" />
-          <h1>InfoFi Helper</h1>
+          <img class="brand-icon" src="./assets/icons/icon-32.png" alt="" width="22" height="22" />
+          <h1>InfoFi</h1>
         </div>
         <button id="refresh-state-btn" type="button" class="secondary">Refresh</button>
       </header>
 
       <nav class="tabs">
-        <button id="tab-requester-btn" type="button" class="tab active">Requester</button>
-        <button id="tab-offerer-btn" type="button" class="tab">Offerer</button>
+        <button id="tab-requester-btn" type="button" class="tab active">Request</button>
+        <button id="tab-offerer-btn" type="button" class="tab">Offer</button>
       </nav>
 
       <section id="tab-requester" class="tab-panel active">
-        <p class="section-caption">Post a request from this browser context.</p>
+        <p class="section-caption">Post a request.</p>
         <form id="post-request-form" class="form">
           <label>
-            Source URI
+            Source URL
             <input id="source-uri-input" name="sourceURI" required />
           </label>
           <label>
             Question
             <textarea id="question-input" name="question" rows="3" required></textarea>
           </label>
-          <label>
-            Payment Token
-            <input id="payment-token-input" name="paymentToken" placeholder="ETH or 0x..." value="ETH" required />
-          </label>
-          <label>
-            Max Amount (wei)
-            <input id="max-amount-input" name="maxAmountWei" inputmode="numeric" required />
-          </label>
-          <label>
-            Salt (optional bytes32)
-            <input id="request-salt-input" name="salt" placeholder="0x..." />
-          </label>
+          <div class="form-row">
+            <label>
+              Currency
+              <select id="payment-token-input" name="paymentToken" required>
+                <option value="USDC" selected>USDC</option>
+                <option value="ETH">ETH</option>
+              </select>
+            </label>
+            <label>
+              <span id="max-amount-label">Max Amount in $US</span>
+              <input id="max-amount-input" name="maxAmount" inputmode="decimal" placeholder="25.00" required />
+            </label>
+          </div>
           <button id="post-request-btn" type="submit">Post Request</button>
         </form>
         <pre id="request-result" class="result hidden"></pre>
       </section>
 
       <section id="tab-offerer" class="tab-panel">
-        <p class="section-caption">Open requests matched to your recent browsing domains.</p>
+        <p class="section-caption">Open requests. Click one to populate the offer form.</p>
         <section class="card">
           <p id="match-summary">Matched requests: 0</p>
           <p id="open-summary" class="subtle">Open requests: 0</p>
@@ -58,26 +59,31 @@
         </section>
 
         <form id="post-offer-form" class="form">
+          <select id="offer-request-id-select" name="requestId" class="hidden-select" aria-hidden="true" tabindex="-1"></select>
+          <p id="offer-request-selection" class="subtle">Select an open request above.</p>
+          <div class="form-row">
+            <label>
+              Currency
+              <select id="offer-currency-input" name="currency" required>
+                <option value="USDC" selected>USDC</option>
+                <option value="ETH">ETH</option>
+              </select>
+            </label>
+            <label>
+              <span id="offer-amount-label">Amount in $US</span>
+              <input id="offer-amount-input" name="amount" inputmode="decimal" placeholder="25.00" required />
+            </label>
+          </div>
           <label>
-            Request
-            <select id="offer-request-id-select" name="requestId" required></select>
+            ETA (minutes)
+            <input id="offer-eta-input" name="etaMinutes" inputmode="numeric" required />
           </label>
-          <label>
-            Offer Amount (wei)
-            <input id="offer-amount-input" name="amountWei" inputmode="numeric" required />
-          </label>
-          <label>
-            ETA (seconds)
-            <input id="offer-eta-input" name="etaSeconds" inputmode="numeric" required />
-          </label>
+          <!--
           <label>
             Proof Type
-            <input id="offer-proof-input" name="proofType" value="history-match" required />
+            <input id="offer-proof-input" name="proofType" value="reputation-only" required />
           </label>
-          <label>
-            Salt (optional bytes32)
-            <input id="offer-salt-input" name="salt" placeholder="0x..." />
-          </label>
+          -->
           <button id="post-offer-btn" type="submit">Post Offer</button>
         </form>
         <pre id="offer-result" class="result hidden"></pre>
