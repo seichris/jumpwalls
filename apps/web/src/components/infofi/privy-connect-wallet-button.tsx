@@ -215,7 +215,7 @@ export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walle
           }
         }}
       >
-        {authenticated ? "Create Privy Wallet" : "Connect/Create Privy"}
+        {authenticated ? "Create Privy Wallet" : "Connect Wallet"}
       </Button>
       {error ? <span className="text-xs text-destructive">{error}</span> : null}
     </div>

@@ -378,7 +378,7 @@ export default function JobDetailPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+    <main className="mx-auto w-full px-4 py-6 md:px-8">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>

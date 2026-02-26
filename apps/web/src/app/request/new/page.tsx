@@ -32,7 +32,7 @@ export default function NewRequestPage() {
 
   const [sourceURI, setSourceURI] = React.useState("");
   const [question, setQuestion] = React.useState("");
-  const [tokenMode, setTokenMode] = React.useState<"ETH" | "USDC">("ETH");
+  const [tokenMode, setTokenMode] = React.useState<"ETH" | "USDC">("USDC");
   const [maxAmount, setMaxAmount] = React.useState("0.0001");
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [saltInput, setSaltInput] = React.useState("");

@@ -99,7 +99,7 @@ export default function HomePage() {
   }, [requests, tokenFilter, sourceFilter]);
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+    <main className="mx-auto w-full px-4 py-6 md:px-8">
       <header className="mb-6 flex flex-col gap-4 border-b pb-4 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
