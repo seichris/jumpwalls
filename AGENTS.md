@@ -1,4 +1,4 @@
-# CLI Agents (InfoFi-only)
+# CLI Agents
 
 This doc describes how an AI agent can operate the InfoFi v0 flow entirely from a terminal using:
 
