@@ -1,0 +1,4 @@
+interface:
+  display_name: "InfoFi OpenClaw Listener"
+  short_description: "Monitor incoming open InfoFi requests for OpenClaw"
+  default_prompt: "Use $infofi-openclaw-listener to monitor new OPEN requests and report only unseen requestIds."
