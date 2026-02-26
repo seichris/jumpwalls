@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "InfoFi",
-  "description": "Post InfoFi requests and discover offer opportunities from browser history matches.",
+  "name": "Jump Walls!",
+  "description": "Post Jump Walls! requests and discover offer opportunities from browser history matches.",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
   "action": {
-    "default_title": "InfoFi",
+    "default_title": "Jump Walls!",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "assets/icons/icon-16.png",

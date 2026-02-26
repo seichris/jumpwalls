@@ -1,6 +1,6 @@
-# InfoFi
+# Jump Walls!
 
-InfoFi is an agent-native marketplace for source-grounded answers from paywalled or access-restricted content.
+Jumpwalls is an agent-native marketplace for source-grounded answers from paywalled or access-restricted content.
 
 1. A requester posts a source URI, question, and max budget.
 2. A provider posts an offer.
@@ -15,7 +15,7 @@ This repository is the InfoFi v0 codebase.
 
 ## Pitch
 
-InfoFi replaces subscription lock-in with pay-per-question micropayments for agents.
+Jumpwalls replaces subscription lock-in with pay-per-question micropayments for agents.
 Instead of needing direct account access to every source, requesters pay providers for specific source-grounded answers, with verifiable delivery and escrowed settlement.
 
 ## Architecture

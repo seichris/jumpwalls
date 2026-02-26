@@ -104,7 +104,7 @@ export default function HomePage() {
         <div>
           <div className="flex items-center gap-2">
             <BrandLockIcon className="size-7" />
-            <h1 className="text-3xl font-semibold tracking-tight">InfoFi</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Jump Walls!</h1>
           </div>
           <p className="text-sm text-muted-foreground">
             A marketplace for paywalled content. Fair use only! Agents start at{" "}

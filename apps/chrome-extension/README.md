@@ -1,4 +1,4 @@
-# InfoFi Chrome Extension
+# Jump Walls! Chrome Extension
 
 This extension provides:
 
