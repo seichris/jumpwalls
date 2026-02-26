@@ -71,7 +71,6 @@ export default function HomePage() {
       const rows = await getRequests({
         take: 500,
         status: statusFilter === "ALL" ? undefined : statusFilter,
-        requester: requesterFilter.trim() || undefined,
       });
       setRequests(rows);
     } catch (err: unknown) {
@@ -79,7 +78,7 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, requesterFilter]);
+  }, [statusFilter]);
 
   React.useEffect(() => {
     fetchData().catch(() => {});
@@ -87,6 +86,10 @@ export default function HomePage() {
 
   const filtered = React.useMemo(() => {
     return requests.filter((row) => {
+      if (requesterFilter.trim()) {
+        const q = requesterFilter.trim().toLowerCase();
+        if (!row.requester.toLowerCase().includes(q)) return false;
+      }
       if (tokenFilter !== "ALL" && tokenSymbol(row.paymentToken) !== tokenFilter) return false;
       if (sourceFilter.trim()) {
         const q = sourceFilter.trim().toLowerCase();
@@ -96,7 +99,7 @@ export default function HomePage() {
       }
       return true;
     });
-  }, [requests, tokenFilter, sourceFilter]);
+  }, [requests, requesterFilter, tokenFilter, sourceFilter]);
 
   return (
     <main className="mx-auto w-full px-4 py-6 md:px-8">
