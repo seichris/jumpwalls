@@ -1,21 +1,18 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export function BrandLockIcon({ className }: { className?: string }) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth={1.5}
-      stroke="currentColor"
+    <Image
+      src="/jumping_walls_icon.svg"
+      alt=""
+      width={24}
+      height={24}
       aria-hidden="true"
-      className={cn("size-6 text-foreground", className)}
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M13.5 10.5V6.75a4.5 4.5 0 1 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
-      />
-    </svg>
+      className={cn(
+        "size-6 [filter:brightness(0)_saturate(100%)_opacity(0.9)] dark:[filter:invert(1)_brightness(0.95)]",
+        className,
+      )}
+    />
   );
 }

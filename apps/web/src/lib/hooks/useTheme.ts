@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 export type ThemeMode = "light" | "dark";
 
 const STORAGE_KEY = "infofi-theme";
-const LIGHT_FAVICON = "/lock-open-light.svg";
-const DARK_FAVICON = "/lock-open-dark.svg";
+const LIGHT_FAVICON = "/jumping_walls_icon-light.svg";
+const DARK_FAVICON = "/jumping_walls_icon-dark.svg";
 
 function updateFavicon(theme: ThemeMode) {
   if (typeof document === "undefined") return;

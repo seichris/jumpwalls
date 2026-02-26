@@ -4,6 +4,9 @@ import { PrivyAppProvider } from "@/components/providers/privy-provider";
 import { getSiteOrigin } from "@/lib/site-origin";
 import "./globals.css";
 
+const LIGHT_FAVICON = "/jumping_walls_icon-light.svg";
+const DARK_FAVICON = "/jumping_walls_icon-dark.svg";
+
 const metadataBase = new URL(getSiteOrigin());
 
 const geistSans = Geist({
@@ -23,11 +26,11 @@ export const metadata: Metadata = {
   description: "On-chain marketplace for paywalled knowledge digests and Q&A.",
   icons: {
     icon: [
-      { url: "/lock-open-light.svg", media: "(prefers-color-scheme: light)", type: "image/svg+xml" },
-      { url: "/lock-open-dark.svg", media: "(prefers-color-scheme: dark)", type: "image/svg+xml" },
-      { url: "/favicon.ico" },
+      { url: LIGHT_FAVICON, media: "(prefers-color-scheme: light)", type: "image/svg+xml" },
+      { url: DARK_FAVICON, media: "(prefers-color-scheme: dark)", type: "image/svg+xml" },
+      { url: LIGHT_FAVICON, type: "image/svg+xml" },
     ],
-    shortcut: ["/favicon.ico"],
+    shortcut: [LIGHT_FAVICON],
   },
   keywords: [
     "InfoFi",
@@ -84,7 +87,7 @@ export default function RootLayout({
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       const theme = stored || (prefersDark ? "dark" : "light");
       if (theme === "dark") document.documentElement.classList.add("dark");
-      const favicon = theme === "dark" ? "/lock-open-dark.svg" : "/lock-open-light.svg";
+      const favicon = theme === "dark" ? "${DARK_FAVICON}" : "${LIGHT_FAVICON}";
       const iconLinks = Array.from(document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]'));
       if (iconLinks.length === 0) {
         const link = document.createElement("link");
