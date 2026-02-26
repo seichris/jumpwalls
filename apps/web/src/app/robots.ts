@@ -1,10 +1,7 @@
 import type { MetadataRoute } from "next";
+import { getSiteOrigin } from "@/lib/site-origin";
 
-const siteOrigin =
-  process.env.NEXT_PUBLIC_WEB_ORIGIN ||
-  process.env.NEXT_PUBLIC_WEB_ORIGIN_BASE_MAINNET ||
-  process.env.NEXT_PUBLIC_WEB_ORIGIN_ETHEREUM_MAINNET ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+const siteOrigin = getSiteOrigin();
 
 export default function robots(): MetadataRoute.Robots {
   return {

@@ -1,14 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { PrivyAppProvider } from "@/components/providers/privy-provider";
+import { getSiteOrigin } from "@/lib/site-origin";
 import "./globals.css";
 
-const siteOrigin =
-  process.env.NEXT_PUBLIC_WEB_ORIGIN ||
-  process.env.NEXT_PUBLIC_WEB_ORIGIN_BASE_MAINNET ||
-  process.env.NEXT_PUBLIC_WEB_ORIGIN_ETHEREUM_MAINNET ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-const metadataBase = new URL(siteOrigin);
+const metadataBase = new URL(getSiteOrigin());
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
