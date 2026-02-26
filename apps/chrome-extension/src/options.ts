@@ -1,4 +1,4 @@
-import { normalizeApiUrl } from "./api";
+import { apiOriginForDisplay, apiOriginPermissionPattern, normalizeApiUrl } from "./api";
 import { DEFAULT_SETTINGS, EMPTY_STATE } from "./constants";
 import { extractDomainFromSource, normalizeDomain } from "./domain";
 import { getSettings } from "./storage";
@@ -133,6 +133,15 @@ async function ensureHistoryPermission(): Promise<void> {
   if (!granted) throw new Error("History permission is required for offer matching");
 }
 
+async function ensureApiOriginPermission(apiUrl: string): Promise<void> {
+  const originPattern = apiOriginPermissionPattern(apiUrl);
+  const hasPermission = await chrome.permissions.contains({ origins: [originPattern] });
+  if (hasPermission) return;
+
+  const granted = await chrome.permissions.request({ origins: [originPattern] });
+  if (!granted) throw new Error(`Permission is required to access API origin ${apiOriginForDisplay(apiUrl)}`);
+}
+
 settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void (async () => {
@@ -144,6 +153,7 @@ settingsForm.addEventListener("submit", (event) => {
         throw new Error("History lookback must be between 1 and 365 days");
       }
 
+      await ensureApiOriginPermission(apiUrl);
       await ensureHistoryPermission();
 
       const settings: ExtensionSettings = {

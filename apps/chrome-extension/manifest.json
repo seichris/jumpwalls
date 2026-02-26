@@ -23,20 +23,14 @@
     "type": "module"
   },
   "options_page": "options.html",
-  "permissions": ["storage", "alarms", "tabs", "activeTab", "scripting"],
+  "permissions": ["storage", "alarms", "activeTab", "scripting"],
   "optional_permissions": ["history"],
-  "host_permissions": ["<all_urls>"],
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_start"
-    }
-  ],
+  "host_permissions": ["https://info-api.8o.vc/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
   "web_accessible_resources": [
     {
       "resources": ["inpage.js"],
-      "matches": ["<all_urls>"]
+      "matches": ["https://*/*", "http://*/*"]
     }
   ]
 }

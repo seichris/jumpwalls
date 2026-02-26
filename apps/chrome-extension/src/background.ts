@@ -1,5 +1,11 @@
 import { REFRESH_ALARM } from "./constants";
-import { fetchContractConfig, fetchOpenRequests, normalizeApiUrl } from "./api";
+import {
+  apiOriginForDisplay,
+  apiOriginPermissionPattern,
+  fetchContractConfig,
+  fetchOpenRequests,
+  normalizeApiUrl
+} from "./api";
 import { domainMatches, extractDomainFromSource, extractDomainFromUrl } from "./domain";
 import { computeSubscriptionMatches } from "./matching";
 import { buildRefreshErrorState, buildRefreshSuccessState } from "./refresh-state";
@@ -56,6 +62,14 @@ async function refreshState(): Promise<BackgroundStateResponse> {
   const settings = await getSettings();
   const apiUrl = normalizeApiUrl(settings.apiUrl);
   try {
+    const apiPermissionPattern = apiOriginPermissionPattern(apiUrl);
+    const apiPermissionGranted = await chrome.permissions.contains({ origins: [apiPermissionPattern] });
+    if (!apiPermissionGranted) {
+      throw new Error(
+        `Missing permission for API origin ${apiOriginForDisplay(apiUrl)}. Open extension settings and save to grant access.`
+      );
+    }
+
     const [contract, openRequests] = await Promise.all([fetchContractConfig(apiUrl), fetchOpenRequests(apiUrl)]);
     const historyMatches =
       (await historyPermissionGranted()) ? await computeHistoryMatches(settings.historyLookbackDays, openRequests) : {};

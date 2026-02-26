@@ -25,7 +25,7 @@ pnpm -C apps/chrome-extension test
 ## Configure
 
 1. Open extension options.
-2. Set `API URL` (e.g. `http://localhost:8787`).
+2. Set `API URL` (e.g. `http://localhost:8787`) and save (grants host access for that API origin).
 3. Set `History lookback (days)` and save (grants `history` permission).
 4. In `My Subscriptions`, mark domains where you have access via app/account so requests still match without browsing history.
 

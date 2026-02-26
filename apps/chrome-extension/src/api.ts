@@ -4,6 +4,29 @@ export function normalizeApiUrl(raw: string): string {
   return raw.trim().replace(/\/+$/, "");
 }
 
+function parseApiUrl(raw: string): URL {
+  const normalized = normalizeApiUrl(raw);
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error("API URL must be a valid absolute URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("API URL must use http:// or https://");
+  }
+  return parsed;
+}
+
+export function apiOriginForDisplay(raw: string): string {
+  return parseApiUrl(raw).origin;
+}
+
+export function apiOriginPermissionPattern(raw: string): string {
+  const parsed = parseApiUrl(raw);
+  return `${parsed.protocol}//${parsed.hostname}/*`;
+}
+
 export async function fetchContractConfig(apiUrl: string): Promise<ContractConfig> {
   const url = `${normalizeApiUrl(apiUrl)}/contract`;
   const response = await fetch(url, { method: "GET", cache: "no-store" });
