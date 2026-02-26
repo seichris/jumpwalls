@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { logUiAction } from "@/lib/infofi-ux";
-import { defaultPrivyFundingAmountUsd, isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
+import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { buildPrivyFundingOptions, classifyFundingError, isPositiveNumberString, type FundingErrorCode } from "@/lib/privy-funding";
 import { errorMessage } from "@/lib/utils";
 import {
@@ -46,14 +46,23 @@ function hasPositiveDelta(delta: WalletBalanceDelta) {
   return false;
 }
 
+function getDefaultFundingSelection(walletEthWei: bigint | null | undefined): { asset: "ETH" | "USDC"; amount: string } {
+  if (walletEthWei === 0n) {
+    return { asset: "ETH", amount: "0.013" };
+  }
+  return { asset: "USDC", amount: "50" };
+}
+
 export function PrivyFundWalletDialog({
   walletAddress,
+  walletEthWei,
   walletChainId,
   expectedChainId,
   onFundingOutcome,
   renderTrigger,
 }: {
   walletAddress: Address | null;
+  walletEthWei?: bigint | null;
   walletChainId?: number | null;
   expectedChainId: number;
   onFundingOutcome?: (outcome: PrivyFundingOutcome) => void;
@@ -82,10 +91,11 @@ export function PrivyFundWalletDialog({
   }, [wallets]);
   const targetAddress = walletAddress || privyWalletAddress;
   const walletChainMismatch = walletChainId !== null && walletChainId !== expectedChainId;
+  const defaultFundingSelection = React.useMemo(() => getDefaultFundingSelection(walletEthWei), [walletEthWei]);
 
   const [open, setOpen] = React.useState(false);
-  const [asset, setAsset] = React.useState<"ETH" | "USDC">("ETH");
-  const [amountUsd, setAmountUsd] = React.useState(defaultPrivyFundingAmountUsd());
+  const [asset, setAsset] = React.useState<"ETH" | "USDC">(defaultFundingSelection.asset);
+  const [amountUsd, setAmountUsd] = React.useState(defaultFundingSelection.amount);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -100,6 +110,8 @@ export function PrivyFundWalletDialog({
 
   const disabled = submitting || walletChainMismatch;
   const openDialog = () => {
+    setAsset(defaultFundingSelection.asset);
+    setAmountUsd(defaultFundingSelection.amount);
     setOpen(true);
     logUiAction("privy_funding_opened", {
       expectedChainId,
@@ -143,7 +155,7 @@ export function PrivyFundWalletDialog({
       return;
     }
     if (!isPositiveNumberString(amountUsd)) {
-      setError("Enter a valid USD amount greater than 0.");
+      setError("Enter a valid amount greater than 0.");
       logUiAction("privy_funding_blocked", { reason: "invalid_amount", amountUsd });
       return;
     }
@@ -297,11 +309,11 @@ export function PrivyFundWalletDialog({
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="fund-usd-amount">USD Amount</Label>
+                <Label htmlFor="fund-asset-amount">{asset} Amount</Label>
                 <Input
-                  id="fund-usd-amount"
+                  id="fund-asset-amount"
                   inputMode="decimal"
-                  placeholder="50"
+                  placeholder={asset === "ETH" ? "0.013" : "50"}
                   value={amountUsd}
                   onChange={(event) => setAmountUsd(event.target.value)}
                 />

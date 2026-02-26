@@ -11,10 +11,6 @@ import { Button } from "@/components/ui/button";
 import { logUiAction } from "@/lib/infofi-ux";
 import { readWalletBalanceSnapshot, type WalletBalanceSnapshot } from "@/lib/wallet-balance";
 
-function shortHash(value: string) {
-  return `${value.slice(0, 8)}...${value.slice(-6)}`;
-}
-
 function fnv1a(input: string) {
   let hash = 0x811c9dc5;
   for (let index = 0; index < input.length; index += 1) {
@@ -137,35 +133,52 @@ export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walle
   if (privyWalletAddress) {
     const resolvedWalletAddress = walletAddress || (privyWalletAddress as Address);
     const canShowFundingAction = typeof expectedChainId === "number";
+    const usdcIsZero = balanceSnapshot?.usdcWei === 0n;
+    const ethDisplay = balanceSnapshot ? Number(formatUnits(balanceSnapshot.ethWei, 18)).toFixed(6) : null;
+    const usdcDisplay = balanceSnapshot
+      ? balanceSnapshot.usdcWei === null
+        ? "-"
+        : Number(formatUnits(balanceSnapshot.usdcWei, 6)).toFixed(2)
+      : null;
+    const fundTriggerClassName = [
+      "inline-flex h-5 w-5 items-center justify-center rounded-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+      usdcIsZero ? "text-primary hover:text-primary" : "text-muted-foreground hover:text-foreground",
+    ].join(" ");
+    const renderFundingTrigger = ({ disabled, openDialog }: { disabled: boolean; openDialog: () => void }) => (
+      <button
+        type="button"
+        title="Fund Wallet With Card"
+        aria-label="Fund Wallet With Card"
+        className={fundTriggerClassName}
+        disabled={disabled}
+        onClick={openDialog}
+      >
+        <CreditCard className="h-3.5 w-3.5" />
+      </button>
+    );
+
     return (
-      <Badge variant="secondary" className="font-mono gap-1.5">
+      <Badge
+        variant="secondary"
+        className="group h-9 px-3 font-mono gap-1.5 whitespace-nowrap border-0 bg-transparent hover:bg-transparent"
+      >
         <span className="inline-flex items-center gap-1.5">
           <WalletIdenticon address={privyWalletAddress} />
-          <span>{shortHash(privyWalletAddress)} |</span>
+          <span className="hidden text-xs group-hover:inline group-focus-within:inline">{privyWalletAddress}</span>
         </span>
         {balanceSnapshot ? (
           <span className="inline-flex items-center gap-1">
-            <span>{Number(formatUnits(balanceSnapshot.ethWei, 18)).toFixed(6)} ETH,</span>
+            <span className="hidden group-hover:inline group-focus-within:inline">{ethDisplay} ETH,</span>
             <span className="inline-flex items-center gap-1">
-              <span>{balanceSnapshot.usdcWei === null ? "-" : Number(formatUnits(balanceSnapshot.usdcWei, 6)).toFixed(2)} USDC</span>
+              <span>{usdcDisplay} USDC</span>
               {canShowFundingAction ? (
                 <PrivyFundWalletDialog
                   walletAddress={resolvedWalletAddress}
+                  walletEthWei={balanceSnapshot.ethWei}
                   walletChainId={walletChainId}
                   expectedChainId={expectedChainId}
                   onFundingOutcome={onFundingOutcome}
-                  renderTrigger={({ disabled, openDialog }) => (
-                    <button
-                      type="button"
-                      title="Fund Wallet With Card"
-                      aria-label="Fund Wallet With Card"
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                      disabled={disabled}
-                      onClick={openDialog}
-                    >
-                      <CreditCard className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  renderTrigger={renderFundingTrigger}
                 />
               ) : null}
             </span>
@@ -176,21 +189,11 @@ export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walle
             {canShowFundingAction ? (
               <PrivyFundWalletDialog
                 walletAddress={resolvedWalletAddress}
+                walletEthWei={null}
                 walletChainId={walletChainId}
                 expectedChainId={expectedChainId}
                 onFundingOutcome={onFundingOutcome}
-                renderTrigger={({ disabled, openDialog }) => (
-                  <button
-                    type="button"
-                    title="Fund Wallet With Card"
-                    aria-label="Fund Wallet With Card"
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={disabled}
-                    onClick={openDialog}
-                  >
-                    <CreditCard className="h-3.5 w-3.5" />
-                  </button>
-                )}
+                renderTrigger={renderFundingTrigger}
               />
             ) : null}
           </span>
