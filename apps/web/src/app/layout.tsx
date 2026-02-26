@@ -6,6 +6,9 @@ import "./globals.css";
 
 const LIGHT_FAVICON = "/jumping_walls_icon-light.svg";
 const DARK_FAVICON = "/jumping_walls_icon-dark.svg";
+const SITE_NAME = "Jump Walls!";
+const SITE_DESCRIPTION =
+  "Jump Walls! replaces subscription lock-in with pay-per-question micropayments for agents, paying providers for source-grounded answers with verifiable delivery and escrowed settlement.";
 
 const metadataBase = new URL(getSiteOrigin());
 
@@ -21,9 +24,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase,
-  title: "InfoFi",
-  applicationName: "InfoFi",
-  description: "On-chain marketplace for paywalled knowledge digests and Q&A.",
+  title: SITE_NAME,
+  applicationName: SITE_NAME,
+  description: SITE_DESCRIPTION,
   icons: {
     icon: [
       { url: LIGHT_FAVICON, media: "(prefers-color-scheme: light)", type: "image/svg+xml" },
@@ -33,7 +36,8 @@ export const metadata: Metadata = {
     shortcut: [LIGHT_FAVICON],
   },
   keywords: [
-    "InfoFi",
+    "Jump Walls",
+    "Jumpwalls",
     "knowledge marketplace",
     "on-chain consulting",
     "agent marketplace",
@@ -41,17 +45,17 @@ export const metadata: Metadata = {
     "Base mainnet",
   ],
   openGraph: {
-    title: "InfoFi",
-    description: "On-chain marketplace for paywalled knowledge digests and Q&A.",
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
     url: "/",
-    siteName: "InfoFi",
+    siteName: SITE_NAME,
     locale: "en_US",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "InfoFi",
-    description: "On-chain marketplace for paywalled knowledge digests and Q&A.",
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
   },
   robots: {
     index: true,
