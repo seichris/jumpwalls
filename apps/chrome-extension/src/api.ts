@@ -58,3 +58,22 @@ export async function fetchOpenRequests(apiUrl: string, take = 250): Promise<Ope
   if (!Array.isArray(payload.requests)) return [];
   return payload.requests as OpenRequest[];
 }
+
+export async function postExtensionDomainSignals(
+  apiUrl: string,
+  input: {
+    clientIdHash: string;
+    buckets: Array<{ domain: string; bucketStart: string; signalCount: number }>;
+  }
+): Promise<void> {
+  const url = `${normalizeApiUrl(apiUrl)}/signals/extension/domains`;
+  const response = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post extension demand signals (${response.status})`);
+  }
+}

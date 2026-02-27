@@ -27,6 +27,8 @@ export interface ExtensionSettings {
   apiUrl: string;
   historyLookbackDays: number;
   subscriptionByDomain: Record<string, boolean>;
+  shareDemandSignals: boolean;
+  demandSignalClientId: string;
 }
 
 export interface ExtensionState {

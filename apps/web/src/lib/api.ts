@@ -1,5 +1,7 @@
 import type {
   InfoFiDigest,
+  InfoFiDomainPresenceRow,
+  InfoFiDomainPresenceSummary,
   InfoFiJob,
   InfoFiJobWithDetails,
   InfoFiOffer,
@@ -174,4 +176,27 @@ export async function getInfoFiIds(params: {
   });
   const data = await parseResponse<{ requestId: string; offerId: string | null; jobId: string | null }>(response);
   return data;
+}
+
+export async function getDomainPresence(params?: { take?: number; minActiveAgents?: number }): Promise<InfoFiDomainPresenceRow[]> {
+  const search = new URLSearchParams();
+  if (params?.take) search.set("take", String(params.take));
+  if (params?.minActiveAgents != null) search.set("minActiveAgents", String(params.minActiveAgents));
+  const response = await fetch(`${apiBase()}/domains/presence${search.size ? `?${search.toString()}` : ""}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await parseResponse<{ domains?: InfoFiDomainPresenceRow[] }>(response);
+  return data.domains ?? [];
+}
+
+export async function getDomainSummary(domain: string): Promise<InfoFiDomainPresenceSummary | null> {
+  if (!domain.trim()) return null;
+  const response = await fetch(`${apiBase()}/domains/${encodeURIComponent(domain)}/summary`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (response.status === 404) return null;
+  const data = await parseResponse<{ summary?: InfoFiDomainPresenceSummary | null }>(response);
+  return data.summary ?? null;
 }

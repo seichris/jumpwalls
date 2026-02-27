@@ -7,6 +7,7 @@ import type { BackgroundStateResponse, ExtensionSettings } from "./types";
 const settingsForm = document.getElementById("settings-form") as HTMLFormElement;
 const apiUrlInput = document.getElementById("api-url-input") as HTMLInputElement;
 const historyLookbackInput = document.getElementById("history-lookback-input") as HTMLInputElement;
+const shareDemandSignalsInput = document.getElementById("share-demand-signals-input") as HTMLInputElement;
 const subscriptionDomainList = document.getElementById("subscription-domain-list") as HTMLUListElement;
 const contractLabel = document.getElementById("contract-label") as HTMLParagraphElement;
 const apiStatusLabel = document.getElementById("settings-api-label") as HTMLParagraphElement;
@@ -119,6 +120,7 @@ async function loadState(): Promise<void> {
   latestSettings = settings;
   apiUrlInput.value = settings.apiUrl;
   historyLookbackInput.value = String(settings.historyLookbackDays);
+  shareDemandSignalsInput.checked = settings.shareDemandSignals;
   if (background.state.contract) {
     contractLabel.textContent = `Chain ${background.state.contract.chainId} • Contract ${background.state.contract.contractAddress}`;
   } else {
@@ -159,7 +161,9 @@ settingsForm.addEventListener("submit", (event) => {
       const settings: ExtensionSettings = {
         apiUrl,
         historyLookbackDays,
-        subscriptionByDomain: readSubscriptionByDomain()
+        subscriptionByDomain: readSubscriptionByDomain(),
+        shareDemandSignals: shareDemandSignalsInput.checked,
+        demandSignalClientId: latestSettings.demandSignalClientId
       };
       const refreshed = (await chrome.runtime.sendMessage({
         type: "INFOFI_SET_SETTINGS",
@@ -182,6 +186,7 @@ settingsForm.addEventListener("submit", (event) => {
 void loadState().catch(() => {
   apiUrlInput.value = DEFAULT_SETTINGS.apiUrl;
   historyLookbackInput.value = String(DEFAULT_SETTINGS.historyLookbackDays);
+  shareDemandSignalsInput.checked = DEFAULT_SETTINGS.shareDemandSignals;
   latestSettings = DEFAULT_SETTINGS;
   renderSubscriptionDomains(DEFAULT_SETTINGS, {
     settings: DEFAULT_SETTINGS,

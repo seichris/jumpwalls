@@ -141,3 +141,137 @@ model IndexerState {
 
   @@unique([chainId, contractAddress])
 }
+
+model InfoFiAgentProfile {
+  id          String  @id @default(cuid())
+  agentAddress String
+  displayName String?
+  status      String  @default("ACTIVE")
+
+  chainId         Int
+  contractAddress String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agentAddress, chainId, contractAddress])
+  @@index([status, updatedAt])
+}
+
+model InfoFiAgentCapability {
+  id               String   @id @default(cuid())
+  agentAddress     String
+  domain           String
+  paymentToken     String
+  minAmountWei     String
+  maxAmountWei     String
+  etaSeconds       Int
+  minConfidence    Float    @default(0.65)
+  proofTypeDefault String?
+  isEnabled        Boolean  @default(true)
+
+  chainId         Int
+  contractAddress String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agentAddress, domain, paymentToken, chainId, contractAddress])
+  @@index([agentAddress, chainId, contractAddress])
+  @@index([domain, isEnabled, chainId, contractAddress])
+}
+
+model InfoFiAgentHeartbeat {
+  id               String   @id @default(cuid())
+  agentAddress     String
+  domainsLoggedInJson String
+  expectedEtaJson  String?
+  lastSeenAt       DateTime
+  expiresAt        DateTime
+  signatureDigest  String
+  clientVersion    String?
+
+  chainId         Int
+  contractAddress String
+
+  createdAt DateTime @default(now())
+
+  @@unique([signatureDigest, chainId, contractAddress])
+  @@index([agentAddress, expiresAt, chainId, contractAddress])
+  @@index([expiresAt, chainId, contractAddress])
+}
+
+model InfoFiAgentDecisionLog {
+  id             String   @id @default(cuid())
+  agentAddress   String
+  requestId      String
+  domain         String
+  decision       String
+  confidence     Float
+  reasonCode     String
+  reasonDetail   String?
+  offerAmountWei String?
+  etaSeconds     Int?
+  offerId        String?
+  txHash         String?
+
+  chainId         Int
+  contractAddress String
+
+  createdAt DateTime @default(now())
+
+  @@index([agentAddress, createdAt, chainId, contractAddress])
+  @@index([requestId, chainId, contractAddress])
+  @@index([domain, createdAt, chainId, contractAddress])
+}
+
+model InfoFiAgentAuthChallenge {
+  id           String   @id @default(cuid())
+  agentAddress String
+  nonce        String   @unique
+  purpose      String
+  message      String
+  expiresAt    DateTime
+  usedAt       DateTime?
+
+  chainId         Int
+  contractAddress String
+
+  createdAt DateTime @default(now())
+
+  @@index([agentAddress, purpose, expiresAt, chainId, contractAddress])
+}
+
+model InfoFiDomainDemandSignal {
+  id               String   @id @default(cuid())
+  domain           String
+  bucketStart      DateTime
+  signalCount      Int      @default(0)
+  uniqueClientCount Int     @default(0)
+  source           String
+
+  chainId         Int
+  contractAddress String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([domain, bucketStart, source, chainId, contractAddress])
+  @@index([bucketStart, source, chainId, contractAddress])
+}
+
+model InfoFiDomainDemandSignalClient {
+  id           String   @id @default(cuid())
+  domain       String
+  bucketStart  DateTime
+  source       String
+  clientIdHash String
+
+  chainId         Int
+  contractAddress String
+
+  createdAt DateTime @default(now())
+
+  @@unique([domain, bucketStart, source, clientIdHash, chainId, contractAddress])
+  @@index([bucketStart, source, chainId, contractAddress])
+}

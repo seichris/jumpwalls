@@ -15,16 +15,30 @@ function normalizeSubscriptionByDomain(raw: unknown): Record<string, boolean> {
   return normalized;
 }
 
+function generateClientId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export async function getSettings(): Promise<ExtensionSettings> {
   const stored = await chrome.storage.local.get(STORAGE_SETTINGS_KEY);
   const raw = stored[STORAGE_SETTINGS_KEY] as Partial<ExtensionSettings> | undefined;
+  const demandSignalClientId =
+    typeof raw?.demandSignalClientId === "string" && raw.demandSignalClientId.trim().length >= 12
+      ? raw.demandSignalClientId.trim().toLowerCase()
+      : generateClientId();
   return {
     ...DEFAULT_SETTINGS,
     ...raw,
     subscriptionByDomain: {
       ...DEFAULT_SETTINGS.subscriptionByDomain,
       ...normalizeSubscriptionByDomain(raw?.subscriptionByDomain)
-    }
+    },
+    shareDemandSignals: typeof raw?.shareDemandSignals === "boolean" ? raw.shareDemandSignals : DEFAULT_SETTINGS.shareDemandSignals,
+    demandSignalClientId
   };
 }
 

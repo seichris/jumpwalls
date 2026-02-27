@@ -13,10 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getRequestById } from "@/lib/api";
+import { getDomainSummary, getRequestById } from "@/lib/api";
 import { assertSupportedToken, deriveJobId, formatAmount, hireOfferEthTx, hireOfferTokenTx, isEthToken, readRequestOnchain, tokenSymbol } from "@/lib/infofi-contract";
 import { copyText, logUiAction } from "@/lib/infofi-ux";
-import type { InfoFiOffer, InfoFiRequestWithDetails } from "@/lib/infofi-types";
+import type { InfoFiDomainPresenceSummary, InfoFiOffer, InfoFiRequestWithDetails } from "@/lib/infofi-types";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { errorMessage, friendlyTxError } from "@/lib/utils";
@@ -32,6 +32,23 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
   if (upper === "HIRED") return "warning";
   if (upper === "CLOSED") return "default";
   return "secondary";
+}
+
+function normalizeDomain(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  const asUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const host = new URL(asUrl).hostname.trim().toLowerCase();
+    return host.replace(/^www\./, "").replace(/\.$/, "");
+  } catch {
+    return trimmed
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split(/[/?#:]/)[0]
+      .replace(/\.$/, "");
+  }
 }
 
 function offeredTokensForRequest(request: InfoFiRequestWithDetails): string[] {
@@ -104,6 +121,7 @@ export default function RequestDetailPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [lagWarning, setLagWarning] = React.useState<string | null>(null);
+  const [domainSummary, setDomainSummary] = React.useState<InfoFiDomainPresenceSummary | null>(null);
   const [copyState, setCopyState] = React.useState<string | null>(null);
   const [hiringOfferId, setHiringOfferId] = React.useState<string | null>(null);
   const [openPostOffer, setOpenPostOffer] = React.useState(false);
@@ -137,6 +155,17 @@ export default function RequestDetailPage() {
       const request = await getRequestById(requestId);
       setData(request);
       if (!request) setError("Request not found.");
+      if (request) {
+        const domain = normalizeDomain(request.sourceURI);
+        if (domain) {
+          const summary = await getDomainSummary(domain);
+          setDomainSummary(summary);
+        } else {
+          setDomainSummary(null);
+        }
+      } else {
+        setDomainSummary(null);
+      }
       setLagWarning(null);
       if (request) {
         try {
@@ -362,6 +391,16 @@ export default function RequestDetailPage() {
               <p>Token: <span className="font-medium">{tokenSymbol(data.paymentToken)}</span></p>
               <p>Max: <span className="font-medium">{formatAmount(data.paymentToken, data.maxAmountWei)}</span></p>
             </div>
+            {domainSummary ? (
+              <div className="mt-3 rounded-md border bg-muted/20 p-3 text-xs">
+                <p className="mb-1 font-medium">Domain Availability</p>
+                <div className="grid gap-1 md:grid-cols-3">
+                  <p>Active agents: <span className="font-mono">{domainSummary.activeAgents}</span></p>
+                  <p>Median ETA: <span className="font-mono">{domainSummary.medianExpectedEtaSeconds ? `${Math.max(1, Math.round(domainSummary.medianExpectedEtaSeconds / 60))}m` : "—"}</span></p>
+                  <p>Demand (24h): <span className="font-mono">{domainSummary.demandScore24h}</span></p>
+                </div>
+              </div>
+            ) : null}
             {isRequester && data.status.toUpperCase() === "OPEN" ? (
               <div className="mt-3">
                 <Button

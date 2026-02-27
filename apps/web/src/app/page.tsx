@@ -13,9 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getRequests } from "@/lib/api";
+import { getDomainPresence, getRequests } from "@/lib/api";
 import { formatAmount, tokenSymbol } from "@/lib/infofi-contract";
-import type { InfoFiRequest } from "@/lib/infofi-types";
+import type { InfoFiDomainPresenceRow, InfoFiRequest } from "@/lib/infofi-types";
 import { useTheme } from "@/lib/hooks/useTheme";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { isPrivyFeatureEnabled } from "@/lib/privy";
@@ -31,6 +31,29 @@ function sourceHost(url: string) {
   } catch {
     return url;
   }
+}
+
+function normalizeDomain(input: string) {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  const asUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const host = new URL(asUrl).hostname.trim().toLowerCase();
+    return host.replace(/^www\./, "").replace(/\.$/, "");
+  } catch {
+    return trimmed
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split(/[/?#:]/)[0]
+      .replace(/\.$/, "");
+  }
+}
+
+function etaLabel(seconds: number | null) {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return "—";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return `${minutes}m`;
 }
 
 function statusVariant(status: string): "default" | "secondary" | "warning" | "success" {
@@ -49,6 +72,7 @@ export default function HomePage() {
   const privyEnabled = isPrivyFeatureEnabled();
 
   const [requests, setRequests] = React.useState<InfoFiRequest[]>([]);
+  const [domainPresenceByDomain, setDomainPresenceByDomain] = React.useState<Record<string, InfoFiDomainPresenceRow>>({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [openPostRequest, setOpenPostRequest] = React.useState(false);
@@ -68,11 +92,19 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     try {
-      const rows = await getRequests({
-        take: 500,
-        status: statusFilter === "ALL" ? undefined : statusFilter,
-      });
+      const [rows, domainPresence] = await Promise.all([
+        getRequests({
+          take: 500,
+          status: statusFilter === "ALL" ? undefined : statusFilter,
+        }),
+        getDomainPresence({ take: 500, minActiveAgents: 0 }),
+      ]);
       setRequests(rows);
+      const byDomain = domainPresence.reduce<Record<string, InfoFiDomainPresenceRow>>((acc, row) => {
+        acc[row.domain] = row;
+        return acc;
+      }, {});
+      setDomainPresenceByDomain(byDomain);
     } catch (err: unknown) {
       setError(errorMessage(err));
     } finally {
@@ -195,6 +227,8 @@ export default function HomePage() {
               <TableHead>Question</TableHead>
               <TableHead>Token</TableHead>
               <TableHead className="text-right">Max Amount</TableHead>
+              <TableHead className="text-right">Active Agents</TableHead>
+              <TableHead className="text-right">Median ETA</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Updated</TableHead>
             </TableRow>
@@ -202,42 +236,48 @@ export default function HomePage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                   Loading requests...
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                   No requests found.
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((row) => (
-                <TableRow
-                  key={row.requestId}
-                  className="cursor-pointer"
-                  onClick={() => router.push(`/request/${row.requestId}`)}
-                >
-                  <TableCell className="font-mono text-xs">
-                    <Link className="hover:underline" href={`/request/${row.requestId}`} onClick={(event) => event.stopPropagation()}>
-                      {shortHash(row.requestId)}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="max-w-[220px] truncate">{sourceHost(row.sourceURI)}</TableCell>
-                  <TableCell className="max-w-[360px] truncate">{row.question}</TableCell>
-                  <TableCell>{tokenSymbol(row.paymentToken)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">
-                    {formatAmount(row.paymentToken, row.maxAmountWei)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(row.updatedAt).toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))
+              filtered.map((row) => {
+                const requestDomain = normalizeDomain(row.sourceURI);
+                const presence = requestDomain ? domainPresenceByDomain[requestDomain] : undefined;
+                return (
+                  <TableRow
+                    key={row.requestId}
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/request/${row.requestId}`)}
+                  >
+                    <TableCell className="font-mono text-xs">
+                      <Link className="hover:underline" href={`/request/${row.requestId}`} onClick={(event) => event.stopPropagation()}>
+                        {shortHash(row.requestId)}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="max-w-[220px] truncate">{sourceHost(row.sourceURI)}</TableCell>
+                    <TableCell className="max-w-[360px] truncate">{row.question}</TableCell>
+                    <TableCell>{tokenSymbol(row.paymentToken)}</TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      {formatAmount(row.paymentToken, row.maxAmountWei)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs">{presence?.activeAgents ?? 0}</TableCell>
+                    <TableCell className="text-right text-xs">{etaLabel(presence?.medianExpectedEtaSeconds ?? null)}</TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(row.updatedAt).toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

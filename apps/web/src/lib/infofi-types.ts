@@ -172,3 +172,17 @@ export type InfoFiRequestWithDetails = InfoFiRequest & {
   offers: InfoFiOffer[];
   job: InfoFiJobBase | null;
 };
+
+export type InfoFiDomainPresenceRow = {
+  domain: string;
+  activeAgents: number;
+  activeAgentAddresses: string[];
+  medianExpectedEtaSeconds: number | null;
+  offerToHireRate7d: number | null;
+  hireToDeliverRate7d: number | null;
+  medianFirstOfferLatencySeconds7d: number | null;
+  demandScore24h: number;
+  requestCount7d: number;
+};
+
+export type InfoFiDomainPresenceSummary = InfoFiDomainPresenceRow;

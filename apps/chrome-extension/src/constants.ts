@@ -8,7 +8,9 @@ export const NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   apiUrl: "https://info-api.8o.vc",
   historyLookbackDays: 90,
-  subscriptionByDomain: {}
+  subscriptionByDomain: {},
+  shareDemandSignals: false,
+  demandSignalClientId: ""
 };
 
 export const EMPTY_STATE: ExtensionState = {

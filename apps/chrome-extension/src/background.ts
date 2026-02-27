@@ -4,9 +4,10 @@ import {
   apiOriginPermissionPattern,
   fetchContractConfig,
   fetchOpenRequests,
+  postExtensionDomainSignals,
   normalizeApiUrl
 } from "./api";
-import { domainMatches, extractDomainFromSource, extractDomainFromUrl } from "./domain";
+import { domainMatches, extractDomainFromSource, extractDomainFromUrl, normalizeDomain } from "./domain";
 import { computeSubscriptionMatches } from "./matching";
 import { buildRefreshErrorState, buildRefreshSuccessState } from "./refresh-state";
 import { getSettings, getState, saveSettings, saveState } from "./storage";
@@ -58,6 +59,32 @@ async function computeHistoryMatches(lookbackDays: number, openRequests: Awaited
   return matches;
 }
 
+function currentHourBucketIso(): string {
+  const hourMs = 60 * 60 * 1000;
+  return new Date(Math.floor(Date.now() / hourMs) * hourMs).toISOString();
+}
+
+function buildDemandSignalBuckets(
+  openRequests: Awaited<ReturnType<typeof fetchOpenRequests>>,
+  matchedByRequestId: Record<string, DomainMatch>
+) {
+  const countsByDomain = new Map<string, number>();
+  for (const request of openRequests) {
+    const matched = matchedByRequestId[request.requestId];
+    if (!matched) continue;
+    const domain = normalizeDomain(matched.domain || extractDomainFromSource(request.sourceURI) || "");
+    if (!domain) continue;
+    countsByDomain.set(domain, (countsByDomain.get(domain) || 0) + 1);
+  }
+
+  const bucketStart = currentHourBucketIso();
+  return Array.from(countsByDomain.entries()).map(([domain, signalCount]) => ({
+    domain,
+    bucketStart,
+    signalCount
+  }));
+}
+
 async function refreshState(): Promise<BackgroundStateResponse> {
   const settings = await getSettings();
   const apiUrl = normalizeApiUrl(settings.apiUrl);
@@ -85,6 +112,21 @@ async function refreshState(): Promise<BackgroundStateResponse> {
       computedMatches: matchedByRequestId
     });
     await saveState(state);
+    if (settings.shareDemandSignals && settings.demandSignalClientId) {
+      const buckets = buildDemandSignalBuckets(openRequests, matchedByRequestId);
+      if (buckets.length > 0) {
+        try {
+          await postExtensionDomainSignals(apiUrl, {
+            clientIdHash: settings.demandSignalClientId,
+            buckets
+          });
+        } catch (error) {
+          // Demand-signal upload should not break refresh UX.
+          // eslint-disable-next-line no-console
+          console.warn("[infofi-extension] demand signal upload failed", error);
+        }
+      }
+    }
     await updateBadge(Object.keys(state.matchedByRequestId).length);
     return { settings, state };
   } catch (error) {

@@ -149,6 +149,13 @@ When `CONTRACT_KIND=infofi`, key endpoints are:
 - `GET /digests`
 - `GET /digests/:id`
 - `POST /digests`
+- `POST /agents/challenge`
+- `POST /agents/signup`
+- `POST /agents/heartbeat`
+- `GET /agents/:address`
+- `GET /domains/presence`
+- `GET /domains/:domain/summary`
+- `POST /signals/extension/domains`
 
 ### Digest fair-use screening
 
@@ -178,6 +185,8 @@ Scripts are in `scripts-for-ai-agents/`:
 - `12_approve_token.sh`: approve ERC-20 for escrow
 - `13_rate_job.sh`: rate job
 - `14_x402_citation.sh`: generate x402 citation JSON helper
+- `15_agent_signup.sh`: signed agent capability signup/update
+- `16_agent_heartbeat.sh`: signed agent availability heartbeat
 
 Reference guide: `AGENTS.md`
 
