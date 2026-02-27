@@ -183,3 +183,19 @@ Send live availability heartbeat (`domains_logged_in`, optional ETA map):
 ```bash
 ./scripts-for-ai-agents/16_agent_heartbeat.sh <domains_logged_in_json_file> [expected_eta_by_domain_json_file] [ttl_seconds] [client_version]
 ```
+
+8) Automated worker loop (request listener + dry-run/auto-offer)
+
+Dry-run one pass:
+
+```bash
+API_URL=http://localhost:8787 PRIVATE_KEY=0x... AGENT_MODE=dry-run AGENT_ONCE=true pnpm -C apps/agent-worker start
+```
+
+Auto-offer mode:
+
+```bash
+API_URL=http://localhost:8787 PRIVATE_KEY=0x... AGENT_MODE=auto-offer CHAIN_ID=8453 RPC_URL=https://... CONTRACT_ADDRESS=0x... pnpm -C apps/agent-worker start
+```
+
+The worker also checks hired jobs for the consultant and can auto-deliver digest content (`POST /digests` + `deliverDigest`) when `AGENT_AUTO_DELIVER_ENABLED=true`.

@@ -778,6 +778,94 @@ export async function buildServer() {
     });
   });
 
+  app.post("/agents/decisions", async (req, reply) => {
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const agentAddress = normalizeAddress(data.agentAddress);
+    if (!agentAddress) return reply.code(400).send({ error: "Invalid agentAddress" });
+
+    const requestId = typeof data.requestId === "string" ? data.requestId.trim().toLowerCase() : "";
+    if (!/^0x[a-fA-F0-9]{64}$/.test(requestId)) return reply.code(400).send({ error: "requestId must be bytes32 hex" });
+
+    const domain = normalizeDomain(typeof data.domain === "string" ? data.domain : "");
+    if (!domain) return reply.code(400).send({ error: "Invalid domain" });
+
+    const decisionRaw = typeof data.decision === "string" ? data.decision.trim().toUpperCase() : "";
+    if (!["SKIP", "OFFERED", "FAILED"].includes(decisionRaw)) {
+      return reply.code(400).send({ error: "decision must be SKIP, OFFERED, or FAILED" });
+    }
+
+    const confidence = Number(data.confidence);
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+      return reply.code(400).send({ error: "confidence must be in [0,1]" });
+    }
+
+    const reasonCode = typeof data.reasonCode === "string" ? data.reasonCode.trim().slice(0, 64) : "";
+    if (!reasonCode) return reply.code(400).send({ error: "reasonCode is required" });
+
+    const reasonDetail = typeof data.reasonDetail === "string" ? data.reasonDetail.trim().slice(0, 1024) : null;
+
+    const offerAmountWeiRaw = typeof data.offerAmountWei === "string" ? data.offerAmountWei.trim() : "";
+    const offerAmountWei = offerAmountWeiRaw ? (/^\d+$/.test(offerAmountWeiRaw) ? offerAmountWeiRaw : null) : null;
+    if (offerAmountWeiRaw && !offerAmountWei) {
+      return reply.code(400).send({ error: "offerAmountWei must be an integer string" });
+    }
+
+    const etaSecondsRaw = data.etaSeconds == null ? null : parsePositiveInt(data.etaSeconds, -1);
+    if (etaSecondsRaw != null && (etaSecondsRaw <= 0 || etaSecondsRaw > 7 * 24 * 60 * 60)) {
+      return reply.code(400).send({ error: "etaSeconds must be in 1..604800" });
+    }
+
+    const offerIdRaw = typeof data.offerId === "string" ? data.offerId.trim().toLowerCase() : "";
+    const offerId = offerIdRaw ? (/^0x[a-fA-F0-9]{64}$/.test(offerIdRaw) ? offerIdRaw : null) : null;
+    if (offerIdRaw && !offerId) return reply.code(400).send({ error: "offerId must be bytes32 hex" });
+
+    const txHashRaw = typeof data.txHash === "string" ? data.txHash.trim().toLowerCase() : "";
+    const txHash = txHashRaw ? (/^0x[a-fA-F0-9]{64}$/.test(txHashRaw) ? txHashRaw : null) : null;
+    if (txHashRaw && !txHash) return reply.code(400).send({ error: "txHash must be transaction hash hex" });
+
+    const chainScope = chainScopeData();
+    await prisma.infoFiAgentProfile.upsert({
+      where: {
+        agentAddress_chainId_contractAddress: {
+          agentAddress,
+          chainId: chainScope.chainId,
+          contractAddress: chainScope.contractAddress
+        }
+      },
+      create: {
+        agentAddress,
+        status: "ACTIVE",
+        ...chainScope
+      },
+      update: {
+        status: "ACTIVE"
+      }
+    });
+
+    const created = await prisma.infoFiAgentDecisionLog.create({
+      data: {
+        agentAddress,
+        requestId,
+        domain,
+        decision: decisionRaw,
+        confidence,
+        reasonCode,
+        reasonDetail,
+        offerAmountWei,
+        etaSeconds: etaSecondsRaw,
+        offerId,
+        txHash,
+        ...chainScope
+      }
+    });
+
+    return reply.code(201).send({ decision: created });
+  });
+
   app.get("/agents/:address", async (req, reply) => {
     const params = req.params as { address?: string };
     const agentAddress = normalizeAddress(params.address || "");
