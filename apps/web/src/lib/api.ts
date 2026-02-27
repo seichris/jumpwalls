@@ -14,6 +14,28 @@ function apiBase() {
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787";
 }
 
+function normalizeDomainPresenceRow(row: Partial<InfoFiDomainPresenceRow>): InfoFiDomainPresenceRow {
+  return {
+    domain: typeof row.domain === "string" ? row.domain : "",
+    activeAgents: typeof row.activeAgents === "number" ? row.activeAgents : 0,
+    activeAgentAddresses: Array.isArray(row.activeAgentAddresses)
+      ? row.activeAgentAddresses.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    medianExpectedEtaSeconds:
+      typeof row.medianExpectedEtaSeconds === "number" && Number.isFinite(row.medianExpectedEtaSeconds)
+        ? row.medianExpectedEtaSeconds
+        : null,
+    offerToHireRate7d: typeof row.offerToHireRate7d === "number" ? row.offerToHireRate7d : null,
+    hireToDeliverRate7d: typeof row.hireToDeliverRate7d === "number" ? row.hireToDeliverRate7d : null,
+    medianFirstOfferLatencySeconds7d:
+      typeof row.medianFirstOfferLatencySeconds7d === "number" ? row.medianFirstOfferLatencySeconds7d : null,
+    demandScore24h: typeof row.demandScore24h === "number" ? row.demandScore24h : 0,
+    demandUniqueClients24h: typeof row.demandUniqueClients24h === "number" ? row.demandUniqueClients24h : 0,
+    demandScore24hRedacted: typeof row.demandScore24hRedacted === "boolean" ? row.demandScore24hRedacted : false,
+    requestCount7d: typeof row.requestCount7d === "number" ? row.requestCount7d : 0
+  };
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const jsonUnknown: unknown = await response.json().catch(() => null);
   const jsonObj = jsonUnknown && typeof jsonUnknown === "object" ? jsonUnknown : null;
@@ -187,7 +209,8 @@ export async function getDomainPresence(params?: { take?: number; minActiveAgent
     cache: "no-store",
   });
   const data = await parseResponse<{ domains?: InfoFiDomainPresenceRow[] }>(response);
-  return data.domains ?? [];
+  const rows = Array.isArray(data.domains) ? data.domains : [];
+  return rows.map((row) => normalizeDomainPresenceRow(row));
 }
 
 export async function getDomainSummary(domain: string): Promise<InfoFiDomainPresenceSummary | null> {
@@ -198,5 +221,5 @@ export async function getDomainSummary(domain: string): Promise<InfoFiDomainPres
   });
   if (response.status === 404) return null;
   const data = await parseResponse<{ summary?: InfoFiDomainPresenceSummary | null }>(response);
-  return data.summary ?? null;
+  return data.summary ? normalizeDomainPresenceRow(data.summary) : null;
 }

@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import cors, { type FastifyCorsOptions } from "@fastify/cors";
 import crypto from "node:crypto";
 import { isAddress, keccak256, stringToHex, verifyMessage } from "viem";
@@ -15,6 +15,7 @@ const AGENT_HEARTBEAT_MAX_TTL_SECONDS = 900;
 const DOMAIN_SIGNAL_SOURCE_EXTENSION = "EXTENSION";
 const DOMAIN_SIGNAL_MAX_BUCKETS_PER_REQUEST = 200;
 const AGENT_SIGNATURE_REGEX = /^0x[a-fA-F0-9]{130}$/;
+const RATE_LIMIT_STORE_SWEEP_MAX = 10_000;
 
 type AgentChallengePurpose = "signup" | "heartbeat";
 type ParsedAgentCapability = {
@@ -104,6 +105,10 @@ export async function buildServer() {
     return normalizeDomain(sourceURI);
   }
 
+  function domainsOverlap(left: string, right: string) {
+    return left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`);
+  }
+
   function normalizeAddress(value: unknown) {
     if (typeof value !== "string") return "";
     const trimmed = value.trim();
@@ -174,6 +179,59 @@ export async function buildServer() {
     };
   }
 
+  const demandKAnonymityMinClients = parsePositiveInt(process.env.DEMAND_K_ANONYMITY_MIN_CLIENTS, 10);
+  const heartbeatMaxDomains = parsePositiveInt(process.env.AGENT_HEARTBEAT_MAX_DOMAINS, 100);
+  const signupMaxCapabilities = parsePositiveInt(process.env.AGENT_SIGNUP_MAX_CAPABILITIES, 250);
+  const challengeRateLimitPerMinute = parsePositiveInt(process.env.AGENT_CHALLENGE_RATE_LIMIT_PER_MINUTE, 30);
+  const signupRateLimitPerHour = parsePositiveInt(process.env.AGENT_SIGNUP_RATE_LIMIT_PER_HOUR, 20);
+  const heartbeatRateLimitPerMinute = parsePositiveInt(process.env.AGENT_HEARTBEAT_RATE_LIMIT_PER_MINUTE, 120);
+  const decisionRateLimitPerMinute = parsePositiveInt(process.env.AGENT_DECISION_RATE_LIMIT_PER_MINUTE, 480);
+  const extensionSignalRateLimitPerMinute = parsePositiveInt(process.env.EXT_SIGNAL_RATE_LIMIT_PER_MINUTE, 120);
+  const extensionSignalMaxBucketAgeHours = parsePositiveInt(process.env.EXT_SIGNAL_MAX_BUCKET_AGE_HOURS, 24 * 7);
+  const extensionSignalMaxFutureSkewMinutes = parsePositiveInt(process.env.EXT_SIGNAL_MAX_FUTURE_SKEW_MINUTES, 60);
+  const rateLimitStore = new Map<string, { count: number; resetAtMs: number }>();
+
+  function consumeRateLimit(key: string, maxRequests: number, windowMs: number) {
+    const nowMs = Date.now();
+    const existing = rateLimitStore.get(key);
+    if (!existing || existing.resetAtMs <= nowMs) {
+      rateLimitStore.set(key, { count: 1, resetAtMs: nowMs + windowMs });
+      return { allowed: true as const, remaining: Math.max(0, maxRequests - 1), retryAfterSeconds: 0 };
+    }
+    if (existing.count >= maxRequests) {
+      return {
+        allowed: false as const,
+        remaining: 0,
+        retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAtMs - nowMs) / 1000))
+      };
+    }
+    existing.count += 1;
+    rateLimitStore.set(key, existing);
+    if (rateLimitStore.size > RATE_LIMIT_STORE_SWEEP_MAX) {
+      for (const [entryKey, entryValue] of rateLimitStore.entries()) {
+        if (entryValue.resetAtMs <= nowMs) rateLimitStore.delete(entryKey);
+      }
+    }
+    return { allowed: true as const, remaining: Math.max(0, maxRequests - existing.count), retryAfterSeconds: 0 };
+  }
+
+  function requestIp(req: FastifyRequest) {
+    const forwarded = readHeaderString(req.headers["x-forwarded-for"]);
+    if (forwarded) {
+      const first = forwarded.split(",")[0];
+      if (first && first.trim()) return first.trim().slice(0, 96);
+    }
+    if (typeof req.ip === "string" && req.ip.trim()) return req.ip.trim().slice(0, 96);
+    return "unknown";
+  }
+
+  function rateLimitError(reply: FastifyReply, retryAfterSeconds: number) {
+    return reply.code(429).send({
+      error: "Rate limit exceeded",
+      retryAfterSeconds
+    });
+  }
+
   function buildAgentChallengeMessage(args: {
     purpose: AgentChallengePurpose;
     agentAddress: string;
@@ -228,6 +286,7 @@ export async function buildServer() {
   function parseCapabilityEntries(raw: unknown) {
     if (!Array.isArray(raw)) return { capabilities: [] as ParsedAgentCapability[], error: "capabilities must be an array" };
     const parsed: ParsedAgentCapability[] = [];
+    const capabilityKeys = new Set<string>();
     for (let index = 0; index < raw.length; index += 1) {
       const entry = raw[index];
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -273,6 +332,12 @@ export async function buildServer() {
         typeof item.proofTypeDefault === "string" ? item.proofTypeDefault.trim() : item.proofTypeDefault == null ? "" : "";
       const proofTypeDefault = proofTypeDefaultRaw ? proofTypeDefaultRaw.slice(0, 256) : null;
       const isEnabled = typeof item.isEnabled === "boolean" ? item.isEnabled : true;
+
+      const dedupeKey = `${domain}|${paymentToken}`;
+      if (capabilityKeys.has(dedupeKey)) {
+        return { capabilities: [] as ParsedAgentCapability[], error: `capabilities[${index}] duplicates domain/paymentToken pair` };
+      }
+      capabilityKeys.add(dedupeKey);
 
       parsed.push({
         domain,
@@ -323,12 +388,16 @@ export async function buildServer() {
         : [];
 
     const capabilityEtaByAgentDomain = new Map<string, number>();
+    const capabilityDomainsByAgent = new Map<string, string[]>();
     for (const capability of capabilities) {
       const key = `${capability.agentAddress}|${capability.domain}`;
       const existing = capabilityEtaByAgentDomain.get(key);
       if (existing == null || capability.etaSeconds < existing) {
         capabilityEtaByAgentDomain.set(key, capability.etaSeconds);
       }
+      const domains = capabilityDomainsByAgent.get(capability.agentAddress) ?? [];
+      if (!domains.includes(capability.domain)) domains.push(capability.domain);
+      capabilityDomainsByAgent.set(capability.agentAddress, domains);
     }
 
     const liveByDomain = new Map<
@@ -341,11 +410,14 @@ export async function buildServer() {
     >();
 
     for (const [agentAddress, heartbeat] of latestHeartbeatByAgent.entries()) {
+      const capabilityDomains = capabilityDomainsByAgent.get(agentAddress) ?? [];
+      if (capabilityDomains.length === 0) continue;
       const domains = Array.from(new Set(parseStringArrayJson(heartbeat.domainsLoggedInJson).map((d) => normalizeDomain(d)).filter(Boolean)));
       if (domains.length === 0) continue;
       const etaByDomain = parseEtaByDomainJson(heartbeat.expectedEtaJson);
       for (const domain of domains) {
         if (domainFilter && domain !== domainFilter) continue;
+        if (!capabilityDomains.some((capabilityDomain) => domainsOverlap(capabilityDomain, domain))) continue;
         const key = `${agentAddress}|${domain}`;
         const etaSeconds = etaByDomain[domain] ?? capabilityEtaByAgentDomain.get(key) ?? null;
         const entry = liveByDomain.get(domain) ?? {
@@ -454,13 +526,19 @@ export async function buildServer() {
       },
       select: {
         domain: true,
-        signalCount: true
+        signalCount: true,
+        uniqueClientCount: true
       }
     });
     const demandScoreByDomain = new Map<string, number>();
+    const demandUniqueClientsByDomain = new Map<string, number>();
     for (const signal of demandSignals) {
       if (domainFilter && signal.domain !== domainFilter) continue;
       demandScoreByDomain.set(signal.domain, (demandScoreByDomain.get(signal.domain) || 0) + signal.signalCount);
+      demandUniqueClientsByDomain.set(
+        signal.domain,
+        (demandUniqueClientsByDomain.get(signal.domain) || 0) + Math.max(0, signal.uniqueClientCount)
+      );
     }
 
     const domains = new Set<string>();
@@ -482,7 +560,10 @@ export async function buildServer() {
         const offerToHireRate7d = offerCount > 0 ? Number((hiredCount / offerCount).toFixed(4)) : null;
         const hireToDeliverRate7d = hiredCount > 0 ? Number((deliveredCount / hiredCount).toFixed(4)) : null;
         const medianFirstOfferLatencySeconds7d = medianInt(latencies);
-        const demandScore24h = demandScoreByDomain.get(domain) || 0;
+        const rawDemandScore24h = demandScoreByDomain.get(domain) || 0;
+        const demandUniqueClients24h = demandUniqueClientsByDomain.get(domain) || 0;
+        const demandScore24hRedacted = demandUniqueClients24h < demandKAnonymityMinClients;
+        const demandScore24h = demandScore24hRedacted ? 0 : rawDemandScore24h;
         return {
           domain,
           activeAgents,
@@ -492,6 +573,8 @@ export async function buildServer() {
           hireToDeliverRate7d,
           medianFirstOfferLatencySeconds7d,
           demandScore24h,
+          demandUniqueClients24h,
+          demandScore24hRedacted,
           requestCount7d: domainRequestCount.get(domain) || 0
         };
       });
@@ -514,6 +597,13 @@ export async function buildServer() {
   app.get("/health", async () => ({ ok: true }));
 
   app.post("/agents/challenge", async (req, reply) => {
+    const challengeIpLimit = consumeRateLimit(
+      `agents:challenge:ip:${requestIp(req)}`,
+      challengeRateLimitPerMinute,
+      60_000
+    );
+    if (!challengeIpLimit.allowed) return rateLimitError(reply, challengeIpLimit.retryAfterSeconds);
+
     const body = parseBody(req.body as any);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return reply.code(400).send({ error: "Invalid JSON body" });
@@ -521,6 +611,13 @@ export async function buildServer() {
 
     const agentAddress = normalizeAddress((body as Record<string, unknown>).agentAddress);
     if (!agentAddress) return reply.code(400).send({ error: "Invalid agentAddress" });
+
+    const challengeAgentLimit = consumeRateLimit(
+      `agents:challenge:agent:${agentAddress}`,
+      challengeRateLimitPerMinute,
+      60_000
+    );
+    if (!challengeAgentLimit.allowed) return rateLimitError(reply, challengeAgentLimit.retryAfterSeconds);
 
     const purposeRaw = String((body as Record<string, unknown>).purpose || "signup")
       .trim()
@@ -565,6 +662,13 @@ export async function buildServer() {
   });
 
   app.post("/agents/signup", async (req, reply) => {
+    const signupIpLimit = consumeRateLimit(
+      `agents:signup:ip:${requestIp(req)}`,
+      signupRateLimitPerHour,
+      60 * 60 * 1000
+    );
+    if (!signupIpLimit.allowed) return rateLimitError(reply, signupIpLimit.retryAfterSeconds);
+
     const body = parseBody(req.body as any);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return reply.code(400).send({ error: "Invalid JSON body" });
@@ -572,6 +676,13 @@ export async function buildServer() {
     const data = body as Record<string, unknown>;
     const agentAddress = normalizeAddress(data.agentAddress);
     if (!agentAddress) return reply.code(400).send({ error: "Invalid agentAddress" });
+
+    const signupAgentLimit = consumeRateLimit(
+      `agents:signup:agent:${agentAddress}`,
+      signupRateLimitPerHour,
+      60 * 60 * 1000
+    );
+    if (!signupAgentLimit.allowed) return rateLimitError(reply, signupAgentLimit.retryAfterSeconds);
 
     const nonce = typeof data.nonce === "string" ? data.nonce.trim() : "";
     if (!nonce) return reply.code(400).send({ error: "Missing nonce" });
@@ -581,6 +692,9 @@ export async function buildServer() {
 
     const parsed = parseCapabilityEntries(data.capabilities);
     if (parsed.error) return reply.code(400).send({ error: parsed.error });
+    if (parsed.capabilities.length > signupMaxCapabilities) {
+      return reply.code(400).send({ error: `capabilities exceeds ${signupMaxCapabilities}` });
+    }
 
     const challenge = await verifyAndConsumeAgentChallenge({
       purpose: "signup",
@@ -671,6 +785,13 @@ export async function buildServer() {
   });
 
   app.post("/agents/heartbeat", async (req, reply) => {
+    const heartbeatIpLimit = consumeRateLimit(
+      `agents:heartbeat:ip:${requestIp(req)}`,
+      heartbeatRateLimitPerMinute,
+      60_000
+    );
+    if (!heartbeatIpLimit.allowed) return rateLimitError(reply, heartbeatIpLimit.retryAfterSeconds);
+
     const body = parseBody(req.body as any);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return reply.code(400).send({ error: "Invalid JSON body" });
@@ -678,6 +799,13 @@ export async function buildServer() {
     const data = body as Record<string, unknown>;
     const agentAddress = normalizeAddress(data.agentAddress);
     if (!agentAddress) return reply.code(400).send({ error: "Invalid agentAddress" });
+
+    const heartbeatAgentLimit = consumeRateLimit(
+      `agents:heartbeat:agent:${agentAddress}`,
+      heartbeatRateLimitPerMinute,
+      60_000
+    );
+    if (!heartbeatAgentLimit.allowed) return rateLimitError(reply, heartbeatAgentLimit.retryAfterSeconds);
 
     const nonce = typeof data.nonce === "string" ? data.nonce.trim() : "";
     if (!nonce) return reply.code(400).send({ error: "Missing nonce" });
@@ -695,7 +823,9 @@ export async function buildServer() {
           .filter((entry) => entry.length > 0)
       )
     );
-    if (domainsLoggedIn.length > 500) return reply.code(400).send({ error: "domainsLoggedIn exceeds 500 domains" });
+    if (domainsLoggedIn.length > heartbeatMaxDomains) {
+      return reply.code(400).send({ error: `domainsLoggedIn exceeds ${heartbeatMaxDomains} domains` });
+    }
 
     const expectedEtaByDomain: Record<string, number> = {};
     if (data.expectedEtaByDomain != null) {
@@ -726,6 +856,28 @@ export async function buildServer() {
       signature
     });
     if (!challenge.ok) return reply.code(401).send({ error: challenge.error });
+
+    const enabledCapabilities = await prisma.infoFiAgentCapability.findMany({
+      where: {
+        ...scopedWhere(),
+        agentAddress,
+        isEnabled: true
+      },
+      select: { domain: true }
+    });
+    const capabilityDomains = Array.from(new Set(enabledCapabilities.map((entry) => normalizeDomain(entry.domain)).filter(Boolean)));
+    if (capabilityDomains.length === 0) {
+      return reply.code(400).send({ error: "Agent has no enabled capabilities; call /agents/signup first" });
+    }
+    const invalidDomains = domainsLoggedIn.filter(
+      (domain) => !capabilityDomains.some((capabilityDomain) => domainsOverlap(capabilityDomain, domain))
+    );
+    if (invalidDomains.length > 0) {
+      return reply.code(400).send({
+        error: "domainsLoggedIn contains domains not covered by enabled capabilities",
+        invalidDomains: invalidDomains.slice(0, 20)
+      });
+    }
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
@@ -779,6 +931,13 @@ export async function buildServer() {
   });
 
   app.post("/agents/decisions", async (req, reply) => {
+    const decisionIpLimit = consumeRateLimit(
+      `agents:decisions:ip:${requestIp(req)}`,
+      decisionRateLimitPerMinute,
+      60_000
+    );
+    if (!decisionIpLimit.allowed) return rateLimitError(reply, decisionIpLimit.retryAfterSeconds);
+
     const body = parseBody(req.body as any);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return reply.code(400).send({ error: "Invalid JSON body" });
@@ -786,6 +945,13 @@ export async function buildServer() {
     const data = body as Record<string, unknown>;
     const agentAddress = normalizeAddress(data.agentAddress);
     if (!agentAddress) return reply.code(400).send({ error: "Invalid agentAddress" });
+
+    const decisionAgentLimit = consumeRateLimit(
+      `agents:decisions:agent:${agentAddress}`,
+      decisionRateLimitPerMinute,
+      60_000
+    );
+    if (!decisionAgentLimit.allowed) return rateLimitError(reply, decisionAgentLimit.retryAfterSeconds);
 
     const requestId = typeof data.requestId === "string" ? data.requestId.trim().toLowerCase() : "";
     if (!/^0x[a-fA-F0-9]{64}$/.test(requestId)) return reply.code(400).send({ error: "requestId must be bytes32 hex" });
@@ -942,6 +1108,8 @@ export async function buildServer() {
       hireToDeliverRate7d: null,
       medianFirstOfferLatencySeconds7d: null,
       demandScore24h: 0,
+      demandUniqueClients24h: 0,
+      demandScore24hRedacted: true,
       requestCount7d: 0
     };
 
@@ -949,6 +1117,13 @@ export async function buildServer() {
   });
 
   app.post("/signals/extension/domains", async (req, reply) => {
+    const signalIpLimit = consumeRateLimit(
+      `signals:extension:ip:${requestIp(req)}`,
+      extensionSignalRateLimitPerMinute,
+      60_000
+    );
+    if (!signalIpLimit.allowed) return rateLimitError(reply, signalIpLimit.retryAfterSeconds);
+
     const body = parseBody(req.body as any);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return reply.code(400).send({ error: "Invalid JSON body" });
@@ -958,6 +1133,12 @@ export async function buildServer() {
     if (!/^[a-z0-9:_-]{12,128}$/i.test(clientIdHash)) {
       return reply.code(400).send({ error: "clientIdHash must match [a-z0-9:_-]{12,128}" });
     }
+    const signalClientLimit = consumeRateLimit(
+      `signals:extension:client:${clientIdHash}`,
+      extensionSignalRateLimitPerMinute,
+      60_000
+    );
+    if (!signalClientLimit.allowed) return rateLimitError(reply, signalClientLimit.retryAfterSeconds);
     if (!Array.isArray(data.buckets) || data.buckets.length === 0) {
       return reply.code(400).send({ error: "buckets must be a non-empty array" });
     }
@@ -966,6 +1147,9 @@ export async function buildServer() {
     }
 
     const mergedByKey = new Map<string, { domain: string; bucketStart: Date; signalCount: number }>();
+    const nowMs = Date.now();
+    const minBucketStartMs = nowMs - extensionSignalMaxBucketAgeHours * 60 * 60 * 1000;
+    const maxBucketStartMs = nowMs + extensionSignalMaxFutureSkewMinutes * 60 * 1000;
     for (let index = 0; index < data.buckets.length; index += 1) {
       const entry = data.buckets[index];
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
@@ -983,10 +1167,13 @@ export async function buildServer() {
         return reply.code(400).send({ error: `buckets[${index}].bucketStart is invalid` });
       }
       const bucketStart = new Date(Math.floor(bucketStartDate.getTime() / (60 * 60 * 1000)) * (60 * 60 * 1000));
+      if (bucketStart.getTime() < minBucketStartMs || bucketStart.getTime() > maxBucketStartMs) {
+        return reply.code(400).send({ error: `buckets[${index}].bucketStart out of accepted range` });
+      }
 
       const signalCount = parsePositiveInt(item.signalCount, -1);
-      if (signalCount <= 0 || signalCount > 10000) {
-        return reply.code(400).send({ error: `buckets[${index}].signalCount must be in 1..10000` });
+      if (signalCount <= 0 || signalCount > 1000) {
+        return reply.code(400).send({ error: `buckets[${index}].signalCount must be in 1..1000` });
       }
 
       const key = `${domain}|${bucketStart.toISOString()}`;

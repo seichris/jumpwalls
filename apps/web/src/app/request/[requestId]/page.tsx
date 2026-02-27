@@ -18,6 +18,7 @@ import { assertSupportedToken, deriveJobId, formatAmount, hireOfferEthTx, hireOf
 import { copyText, logUiAction } from "@/lib/infofi-ux";
 import type { InfoFiDomainPresenceSummary, InfoFiOffer, InfoFiRequestWithDetails } from "@/lib/infofi-types";
 import { useWallet } from "@/lib/hooks/useWallet";
+import { conversionRateLabel, demandScoreLabel, etaMinutesLabel, isQuickReplyLikely } from "@/lib/presence";
 import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
 import { errorMessage, friendlyTxError } from "@/lib/utils";
 import { canHireOfferWithBalance, formatWalletFundingSummary } from "@/lib/wallet-balance";
@@ -396,8 +397,18 @@ export default function RequestDetailPage() {
                 <p className="mb-1 font-medium">Domain Availability</p>
                 <div className="grid gap-1 md:grid-cols-3">
                   <p>Active agents: <span className="font-mono">{domainSummary.activeAgents}</span></p>
-                  <p>Median ETA: <span className="font-mono">{domainSummary.medianExpectedEtaSeconds ? `${Math.max(1, Math.round(domainSummary.medianExpectedEtaSeconds / 60))}m` : "—"}</span></p>
-                  <p>Demand (24h): <span className="font-mono">{domainSummary.demandScore24h}</span></p>
+                  <p>Median ETA: <span className="font-mono">{etaMinutesLabel(domainSummary.medianExpectedEtaSeconds)}</span></p>
+                  <p>Quick reply: <span className="font-mono">{isQuickReplyLikely(domainSummary) ? "likely" : "unclear"}</span></p>
+                </div>
+                <div className="mt-1 grid gap-1 md:grid-cols-3">
+                  <p>Offer → hire (7d): <span className="font-mono">{conversionRateLabel(domainSummary.offerToHireRate7d)}</span></p>
+                  <p>Hire → deliver (7d): <span className="font-mono">{conversionRateLabel(domainSummary.hireToDeliverRate7d)}</span></p>
+                  <p>First offer latency (7d): <span className="font-mono">{etaMinutesLabel(domainSummary.medianFirstOfferLatencySeconds7d)}</span></p>
+                </div>
+                <div className="mt-1 grid gap-1 md:grid-cols-3">
+                  <p>Demand (24h): <span className="font-mono">{demandScoreLabel(domainSummary)}</span></p>
+                  <p>Demand clients (24h): <span className="font-mono">{domainSummary.demandUniqueClients24h}</span></p>
+                  <p>Requests (7d): <span className="font-mono">{domainSummary.requestCount7d}</span></p>
                 </div>
               </div>
             ) : null}

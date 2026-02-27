@@ -161,6 +161,12 @@ When `CONTRACT_KIND=infofi`, key endpoints are:
 - `GET /domains/:domain/summary`
 - `POST /signals/extension/domains`
 
+Presence hardening:
+
+- Agent auth and signal ingestion endpoints enforce per-IP and per-identity rate limits.
+- Heartbeats are accepted only for domains covered by enabled signed capabilities.
+- Public `demandScore24h` is k-anonymized and redacted until enough unique clients contribute.
+
 ### Digest fair-use screening
 
 `POST /digests` supports policy enforcement:
@@ -219,6 +225,8 @@ pnpm -C apps/agent-worker start
 Notes:
 
 - Worker also polls hired jobs for the consultant and can auto-deliver via `POST /digests` + `deliverDigest` when `AGENT_AUTO_DELIVER_ENABLED=true`.
+- Worker enters degraded mode after repeated API/heartbeat failures and pauses auto-offers until healthy heartbeats recover.
+- Auto-delivery retries use exponential backoff and reuse prior digest metadata for idempotent retry behavior.
 - Use `AGENT_DIGEST_TEMPLATE` to customize generated digest text with placeholders:
   - `{jobId}`, `{requestId}`, `{sourceURI}`, `{question}`, `{generatedAt}`.
 
@@ -241,11 +249,14 @@ Extension behavior:
 - Open request discovery from API
 - Optional history/domain matching for opportunities (requires explicit Chrome `history` permission)
 - Matching runs locally on-device; extension does not upload browsing history
+- Optional demand signal uploads are coarse per-domain hourly buckets, queued locally, and retried with backoff
 
 ## Test commands
 
 - Contracts: `pnpm contracts:test`
 - API typecheck: `pnpm -C apps/api typecheck`
+- API tests: `pnpm -C apps/api test`
 - Web tests: `pnpm -C apps/web test`
 - Agent worker typecheck: `pnpm -C apps/agent-worker typecheck`
+- Agent worker tests: `pnpm -C apps/agent-worker test`
 - Extension tests: `pnpm -C apps/chrome-extension test`

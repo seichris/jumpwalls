@@ -1,6 +1,6 @@
-import { DEFAULT_SETTINGS, EMPTY_STATE, STORAGE_SETTINGS_KEY, STORAGE_STATE_KEY } from "./constants";
+import { DEFAULT_SETTINGS, EMPTY_SIGNAL_QUEUE, EMPTY_STATE, STORAGE_SETTINGS_KEY, STORAGE_SIGNAL_QUEUE_KEY, STORAGE_STATE_KEY } from "./constants";
 import { normalizeDomain } from "./domain";
-import type { ExtensionSettings, ExtensionState } from "./types";
+import type { DemandSignalBucket, DemandSignalQueueState, ExtensionSettings, ExtensionState } from "./types";
 
 function normalizeSubscriptionByDomain(raw: unknown): Record<string, boolean> {
   if (!raw || typeof raw !== "object") return {};
@@ -58,4 +58,49 @@ export async function getState(): Promise<ExtensionState> {
 
 export async function saveState(state: ExtensionState): Promise<void> {
   await chrome.storage.local.set({ [STORAGE_STATE_KEY]: state });
+}
+
+function normalizeDemandSignalBuckets(raw: unknown): DemandSignalBucket[] {
+  if (!Array.isArray(raw)) return [];
+  const normalized: DemandSignalBucket[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const item = entry as Record<string, unknown>;
+    const domain = normalizeDomain(typeof item.domain === "string" ? item.domain : "");
+    const bucketStart = typeof item.bucketStart === "string" ? item.bucketStart.trim() : "";
+    const signalCount = Number(item.signalCount);
+    if (!domain || !bucketStart || !Number.isFinite(signalCount) || signalCount <= 0) continue;
+    normalized.push({
+      domain,
+      bucketStart,
+      signalCount: Math.floor(signalCount)
+    });
+  }
+  return normalized;
+}
+
+export async function getSignalQueue(): Promise<DemandSignalQueueState> {
+  const stored = await chrome.storage.local.get(STORAGE_SIGNAL_QUEUE_KEY);
+  const raw = stored[STORAGE_SIGNAL_QUEUE_KEY] as Partial<DemandSignalQueueState> | undefined;
+  return {
+    ...EMPTY_SIGNAL_QUEUE,
+    ...raw,
+    pendingBuckets: normalizeDemandSignalBuckets(raw?.pendingBuckets),
+    retryCount: typeof raw?.retryCount === "number" && Number.isFinite(raw.retryCount) && raw.retryCount >= 0 ? Math.floor(raw.retryCount) : 0,
+    nextAttemptAt:
+      typeof raw?.nextAttemptAt === "number" && Number.isFinite(raw.nextAttemptAt) && raw.nextAttemptAt >= 0
+        ? Math.floor(raw.nextAttemptAt)
+        : 0,
+    lastError: typeof raw?.lastError === "string" && raw.lastError.trim() ? raw.lastError.trim().slice(0, 256) : null,
+    updatedAt: typeof raw?.updatedAt === "number" && Number.isFinite(raw.updatedAt) && raw.updatedAt >= 0 ? Math.floor(raw.updatedAt) : 0
+  };
+}
+
+export async function saveSignalQueue(queue: DemandSignalQueueState): Promise<void> {
+  await chrome.storage.local.set({
+    [STORAGE_SIGNAL_QUEUE_KEY]: {
+      ...queue,
+      pendingBuckets: normalizeDemandSignalBuckets(queue.pendingBuckets)
+    }
+  });
 }

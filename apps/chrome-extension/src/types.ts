@@ -31,6 +31,20 @@ export interface ExtensionSettings {
   demandSignalClientId: string;
 }
 
+export interface DemandSignalBucket {
+  domain: string;
+  bucketStart: string;
+  signalCount: number;
+}
+
+export interface DemandSignalQueueState {
+  pendingBuckets: DemandSignalBucket[];
+  retryCount: number;
+  nextAttemptAt: number;
+  lastError: string | null;
+  updatedAt: number;
+}
+
 export interface ExtensionState {
   contract: ContractConfig | null;
   openRequests: OpenRequest[];

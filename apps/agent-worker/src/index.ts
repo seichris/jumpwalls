@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import { readFile } from "node:fs/promises";
-import { infoFiAbi, NATIVE_TOKEN } from "@infofi/shared";
+import { infoFiAbi } from "@infofi/shared";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   createPublicClient,
@@ -13,6 +13,14 @@ import {
   parseEventLogs,
   stringToHex
 } from "viem";
+import {
+  type DeliveryDigestRef,
+  type DeliveryRetryState,
+  extractDomainFromSource,
+  normalizeDomain,
+  pickBestCandidate,
+  scheduleDeliveryRetry
+} from "./logic.js";
 
 type WorkerMode = "dry-run" | "auto-offer";
 
@@ -36,6 +44,11 @@ type WorkerConfig = {
   capabilitiesFile: string | null;
   signupDisplayName: string | null;
   signupStatus: "ACTIVE" | "PAUSED";
+  degradedFailureThreshold: number;
+  degradedRecoveryHeartbeats: number;
+  deliverMaxRetries: number;
+  deliverRetryBaseMs: number;
+  deliverRetryMaxMs: number;
   chainId: number | null;
   rpcUrl: string | null;
   contractAddress: Hex | null;
@@ -95,6 +108,17 @@ type ApiRequestDetailPayload = {
   } | null;
 };
 
+type ApiDigest = {
+  consultantAddress: string;
+  digestHash: string;
+  metadataURI: string;
+  createdAt: string;
+};
+
+type ApiDigestListPayload = {
+  digests?: ApiDigest[];
+};
+
 type Candidate = {
   capability: ApiAgentCapability;
   offerAmountWei: bigint;
@@ -113,6 +137,11 @@ const DEFAULT_SALT_PREFIX = "infofi-agent-worker";
 const DEFAULT_DIGEST_TEMPLATE =
   "Auto-generated consultant digest for {sourceURI}\nQuestion: {question}\n\nSummary:\n- This draft confirms the agent is available and has begun analysis.\n- A full source-grounded response will be expanded in follow-up iterations.\n\nJob: {jobId}\nGeneratedAt: {generatedAt}";
 const DEFAULT_DIGEST_MAX_CHARS = 6000;
+const DEFAULT_DEGRADED_FAILURE_THRESHOLD = 3;
+const DEFAULT_DEGRADED_RECOVERY_HEARTBEATS = 2;
+const DEFAULT_DELIVER_MAX_RETRIES = 6;
+const DEFAULT_DELIVER_RETRY_BASE_MS = 15_000;
+const DEFAULT_DELIVER_RETRY_MAX_MS = 15 * 60 * 1000;
 
 function envString(name: string) {
   return String(process.env[name] || "").trim();
@@ -134,50 +163,8 @@ function parseBool(value: string, fallback: boolean) {
   return fallback;
 }
 
-function clamp(value: number, min: number, max: number) {
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
-}
-
 function normalizeApiUrl(input: string) {
   return input.replace(/\/+$/, "");
-}
-
-function normalizeDomain(input: string) {
-  const trimmed = input.trim();
-  if (!trimmed) return "";
-  const asUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const hostname = new URL(asUrl).hostname.trim().toLowerCase();
-    if (!hostname) return "";
-    return hostname.replace(/^www\./, "").replace(/\.$/, "");
-  } catch {
-    const lowered = trimmed.toLowerCase();
-    const host = lowered
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .split(/[/?#:]/)[0] || "";
-    return host.replace(/\.$/, "");
-  }
-}
-
-function extractDomainFromSource(sourceURI: string) {
-  return normalizeDomain(sourceURI);
-}
-
-function domainsOverlap(left: string, right: string) {
-  return left === right || left.endsWith(`.${right}`) || right.endsWith(`.${left}`);
-}
-
-function normalizeToken(token: string) {
-  const lowered = token.trim().toLowerCase();
-  if (lowered === "eth") return NATIVE_TOKEN;
-  return lowered;
-}
-
-function tokenMatches(requestToken: string, capabilityToken: string) {
-  return normalizeToken(requestToken) === normalizeToken(capabilityToken);
 }
 
 async function main() {
@@ -247,6 +234,31 @@ function loadConfig(): WorkerConfig {
     capabilitiesFile,
     signupDisplayName,
     signupStatus,
+    degradedFailureThreshold: parsePositiveInt(
+      envString("AGENT_DEGRADED_FAILURE_THRESHOLD"),
+      DEFAULT_DEGRADED_FAILURE_THRESHOLD,
+      1,
+      20
+    ),
+    degradedRecoveryHeartbeats: parsePositiveInt(
+      envString("AGENT_DEGRADED_RECOVERY_HEARTBEATS"),
+      DEFAULT_DEGRADED_RECOVERY_HEARTBEATS,
+      1,
+      10
+    ),
+    deliverMaxRetries: parsePositiveInt(envString("AGENT_DELIVER_MAX_RETRIES"), DEFAULT_DELIVER_MAX_RETRIES, 1, 50),
+    deliverRetryBaseMs: parsePositiveInt(
+      envString("AGENT_DELIVER_RETRY_BASE_MS"),
+      DEFAULT_DELIVER_RETRY_BASE_MS,
+      1_000,
+      10 * 60 * 1000
+    ),
+    deliverRetryMaxMs: parsePositiveInt(
+      envString("AGENT_DELIVER_RETRY_MAX_MS"),
+      DEFAULT_DELIVER_RETRY_MAX_MS,
+      5_000,
+      24 * 60 * 60 * 1000
+    ),
     chainId: Number.isFinite(chainId) && chainId && chainId > 0 ? chainId : null,
     rpcUrl,
     contractAddress
@@ -260,6 +272,11 @@ class AgentWorker {
   private heartbeatInFlight = false;
   private stopRequested = false;
   private readonly processingJobs = new Set<string>();
+  private degradedMode = false;
+  private consecutiveApiFailures = 0;
+  private consecutiveHeartbeatFailures = 0;
+  private heartbeatRecoveries = 0;
+  private readonly deliveryRetryByJobId = new Map<string, DeliveryRetryState>();
 
   constructor(
     private readonly cfg: WorkerConfig,
@@ -373,6 +390,51 @@ class AgentWorker {
     console.log(`[agent-worker] loaded ${this.capabilities.length} enabled capabilities`);
   }
 
+  private enterDegradedMode(reason: string) {
+    if (this.degradedMode) return;
+    this.degradedMode = true;
+    this.heartbeatRecoveries = 0;
+    console.warn(`[agent-worker] degraded mode enabled: ${reason}`);
+  }
+
+  private maybeRecoverFromDegradedMode() {
+    if (!this.degradedMode) return;
+    if (this.consecutiveApiFailures > 0) return;
+    if (this.heartbeatRecoveries < this.cfg.degradedRecoveryHeartbeats) return;
+    this.degradedMode = false;
+    this.consecutiveHeartbeatFailures = 0;
+    console.log("[agent-worker] degraded mode cleared after healthy heartbeats");
+  }
+
+  private recordApiFailure(context: string, err: unknown) {
+    this.consecutiveApiFailures += 1;
+    this.heartbeatRecoveries = 0;
+    const message = err instanceof Error ? err.message : String(err);
+    if (this.consecutiveApiFailures >= this.cfg.degradedFailureThreshold) {
+      this.enterDegradedMode(`api failures reached threshold at ${context}: ${message}`);
+    }
+  }
+
+  private recordApiSuccess() {
+    this.consecutiveApiFailures = 0;
+    this.maybeRecoverFromDegradedMode();
+  }
+
+  private recordHeartbeatFailure(context: string, err: unknown) {
+    this.consecutiveHeartbeatFailures += 1;
+    this.heartbeatRecoveries = 0;
+    const message = err instanceof Error ? err.message : String(err);
+    if (this.consecutiveHeartbeatFailures >= this.cfg.degradedFailureThreshold) {
+      this.enterDegradedMode(`heartbeat failures reached threshold at ${context}: ${message}`);
+    }
+  }
+
+  private recordHeartbeatSuccess() {
+    this.consecutiveHeartbeatFailures = 0;
+    this.heartbeatRecoveries += 1;
+    this.maybeRecoverFromDegradedMode();
+  }
+
   private async sendHeartbeat(source: "startup" | "interval") {
     if (this.heartbeatInFlight) return;
     this.heartbeatInFlight = true;
@@ -397,7 +459,7 @@ class AgentWorker {
       }>("/agents/challenge", {
         agentAddress: this.agentAddress,
         purpose: "heartbeat"
-      });
+      }, { trackFailure: false });
       const nonce = typeof challenge.challenge?.nonce === "string" ? challenge.challenge.nonce : "";
       const messageToSign = typeof challenge.challenge?.messageToSign === "string" ? challenge.challenge.messageToSign : "";
       if (!nonce || !messageToSign) throw new Error("Failed to create heartbeat challenge");
@@ -411,11 +473,14 @@ class AgentWorker {
         expectedEtaByDomain,
         ttlSeconds: this.cfg.heartbeatTtlSeconds,
         clientVersion: "agent-worker-v1"
-      });
+      }, { trackFailure: false });
 
       console.log(`[agent-worker] heartbeat sent (${source}) domains=${domains.length}`);
+      this.recordHeartbeatSuccess();
     } catch (err) {
       console.warn(`[agent-worker] heartbeat failed (${source}): ${err instanceof Error ? err.message : String(err)}`);
+      this.recordApiFailure(`heartbeat:${source}`, err);
+      this.recordHeartbeatFailure(`heartbeat:${source}`, err);
     } finally {
       this.heartbeatInFlight = false;
     }
@@ -423,7 +488,9 @@ class AgentWorker {
 
   private async runIteration() {
     await this.refreshCapabilities();
-    if (this.capabilities.length === 0) {
+    if (this.degradedMode) {
+      console.warn("[agent-worker] degraded mode active; skipping auto-offer evaluation");
+    } else if (this.capabilities.length === 0) {
       console.warn("[agent-worker] no capabilities configured; skipping offer evaluation");
     } else {
       const [requestsPayload, offersPayload] = await Promise.all([
@@ -512,7 +579,13 @@ class AgentWorker {
       const jobId = String(job.jobId || "").toLowerCase();
       if (!/^0x[a-fA-F0-9]{64}$/.test(jobId)) continue;
       if (this.processingJobs.has(jobId)) continue;
-      if (job.deliveredAt) continue;
+      if (job.deliveredAt) {
+        this.deliveryRetryByJobId.delete(jobId);
+        continue;
+      }
+      const retryState = this.deliveryRetryByJobId.get(jobId);
+      if (retryState?.disabled) continue;
+      if (retryState && Date.now() < retryState.nextAttemptAt) continue;
 
       this.processingJobs.add(jobId);
       try {
@@ -565,19 +638,35 @@ class AgentWorker {
       return;
     }
 
+    const existingRetryState = this.deliveryRetryByJobId.get(job.jobId);
+    let digestRef: DeliveryDigestRef | null = existingRetryState?.storedDigest ?? null;
+
     try {
-      const stored = await this.storeDigest({
-        jobId: job.jobId,
-        sourceURI: request.sourceURI,
-        question: request.question,
-        digest: digestText
+      if (!digestRef) {
+        digestRef = await this.fetchReusableDigest(job.jobId);
+      }
+      if (!digestRef) {
+        digestRef = await this.storeDigest({
+          jobId: job.jobId,
+          sourceURI: request.sourceURI,
+          question: request.question,
+          digest: digestText
+        });
+      }
+      this.deliveryRetryByJobId.set(job.jobId, {
+        attempts: existingRetryState?.attempts ?? 0,
+        nextAttemptAt: 0,
+        lastError: null,
+        disabled: false,
+        storedDigest: digestRef
       });
 
       const delivered = await this.deliverDigestOnchain({
         job,
-        digestHash: stored.digestHash,
-        metadataURI: stored.metadataURI
+        digestHash: digestRef.digestHash,
+        metadataURI: digestRef.metadataURI
       });
+      this.deliveryRetryByJobId.delete(job.jobId);
 
       await this.logDecision({
         requestId: request.requestId,
@@ -591,16 +680,73 @@ class AgentWorker {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (await this.isJobAlreadyDelivered(job.jobId)) {
+        this.deliveryRetryByJobId.delete(job.jobId);
+        await this.logDecision({
+          requestId: request.requestId,
+          domain,
+          decision: "SKIP",
+          confidence: 1,
+          reasonCode: "AUTO_DELIVER_ALREADY_DELIVERED",
+          reasonDetail: message,
+          offerId: job.offerId
+        });
+        return;
+      }
+
+      const nextState = scheduleDeliveryRetry({
+        previous: this.deliveryRetryByJobId.get(job.jobId),
+        nowMs: Date.now(),
+        error: message,
+        maxRetries: this.cfg.deliverMaxRetries,
+        baseBackoffMs: this.cfg.deliverRetryBaseMs,
+        maxBackoffMs: this.cfg.deliverRetryMaxMs
+      });
+      this.deliveryRetryByJobId.set(job.jobId, nextState);
+      const reasonCode = nextState.disabled ? "AUTO_DELIVER_GAVE_UP" : "AUTO_DELIVER_RETRY_SCHEDULED";
+      const reasonDetail = nextState.disabled
+        ? `${message}; retries_exhausted=${nextState.attempts}`
+        : `${message}; attempt=${nextState.attempts}; retryAt=${new Date(nextState.nextAttemptAt).toISOString()}`;
       await this.logDecision({
         requestId: request.requestId,
         domain,
         decision: "FAILED",
         confidence: 1,
-        reasonCode: "AUTO_DELIVER_FAILED",
-        reasonDetail: message,
+        reasonCode,
+        reasonDetail,
         offerId: job.offerId
       });
-      throw err;
+      if (nextState.disabled) {
+        console.warn(`[agent-worker] delivery disabled for job ${job.jobId} after ${nextState.attempts} attempts`);
+      }
+    }
+  }
+
+  private async fetchReusableDigest(jobId: string): Promise<DeliveryDigestRef | null> {
+    const payload = await this.apiGet<ApiDigestListPayload>(`/digests?jobId=${encodeURIComponent(jobId)}&take=20`);
+    const digests = Array.isArray(payload.digests) ? payload.digests : [];
+    const candidates = digests.filter((digest) => {
+      if (!digest || typeof digest !== "object") return false;
+      const digestHash = typeof digest.digestHash === "string" ? digest.digestHash.toLowerCase() : "";
+      const metadataURI = typeof digest.metadataURI === "string" ? digest.metadataURI.trim() : "";
+      const consultant = typeof digest.consultantAddress === "string" ? digest.consultantAddress.toLowerCase() : "";
+      return /^0x[a-fA-F0-9]{64}$/.test(digestHash) && metadataURI.length > 0 && consultant === this.agentAddress.toLowerCase();
+    });
+    if (candidates.length === 0) return null;
+    candidates.sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+    const latest = candidates[0]!;
+    return {
+      digestHash: latest.digestHash.toLowerCase(),
+      metadataURI: latest.metadataURI.trim()
+    };
+  }
+
+  private async isJobAlreadyDelivered(jobId: string): Promise<boolean> {
+    try {
+      const payload = await this.apiGet<{ job?: ApiJob | null }>(`/jobs?jobId=${encodeURIComponent(jobId)}`);
+      return Boolean(payload?.job?.deliveredAt);
+    } catch {
+      return false;
     }
   }
 
@@ -692,42 +838,15 @@ class AgentWorker {
   }
 
   private pickCandidate(request: ApiRequest, domain: string): Candidate | null {
-    const requestMaxAmount = BigInt(request.maxAmountWei);
-    const candidates: Candidate[] = [];
-
-    for (const capability of this.capabilities) {
-      if (!capability.isEnabled) continue;
-      const capabilityDomain = normalizeDomain(capability.domain);
-      if (!capabilityDomain || !domainsOverlap(capabilityDomain, domain)) continue;
-      if (!tokenMatches(request.paymentToken, capability.paymentToken)) continue;
-
-      const minAmount = BigInt(capability.minAmountWei);
-      const maxAmount = BigInt(capability.maxAmountWei);
-      if (requestMaxAmount < minAmount) continue;
-
-      const offerAmount = requestMaxAmount < maxAmount ? requestMaxAmount : maxAmount;
-      if (offerAmount < minAmount) continue;
-
-      const budgetFit = requestMaxAmount >= maxAmount ? 1 : 0.85;
-      const confidence = 0.45 * 1 + 0.25 * budgetFit + 0.2 * 1 + 0.1 * 0.8;
-      if (confidence < capability.minConfidence) continue;
-
-      candidates.push({
-        capability,
-        offerAmountWei: offerAmount,
-        confidence,
-        domain
-      });
-    }
-
-    if (candidates.length === 0) return null;
-    candidates.sort(
-      (left, right) =>
-        right.confidence - left.confidence ||
-        left.capability.etaSeconds - right.capability.etaSeconds ||
-        (right.offerAmountWei === left.offerAmountWei ? 0 : right.offerAmountWei > left.offerAmountWei ? 1 : -1)
+    return pickBestCandidate(
+      {
+        requestId: request.requestId,
+        paymentToken: request.paymentToken,
+        maxAmountWei: request.maxAmountWei
+      },
+      domain,
+      this.capabilities
     );
-    return candidates[0] || null;
   }
 
   private async postOffer(request: ApiRequest, candidate: Candidate): Promise<{ txHash: string; offerId: string | null }> {
@@ -805,21 +924,44 @@ class AgentWorker {
     }
   }
 
-  private async apiGet<T>(path: string): Promise<T> {
-    const response = await fetch(`${this.cfg.apiUrl}${path}`, { method: "GET", cache: "no-store" });
-    const payload = await parseResponse(response);
-    return payload as T;
+  private async apiGet<T>(
+    path: string,
+    options?: {
+      trackFailure?: boolean;
+    }
+  ): Promise<T> {
+    try {
+      const response = await fetch(`${this.cfg.apiUrl}${path}`, { method: "GET", cache: "no-store" });
+      const payload = await parseResponse(response);
+      this.recordApiSuccess();
+      return payload as T;
+    } catch (err) {
+      if (options?.trackFailure !== false) this.recordApiFailure(`GET ${path}`, err);
+      throw err;
+    }
   }
 
-  private async apiPost<T = unknown>(path: string, body: unknown): Promise<T> {
-    const response = await fetch(`${this.cfg.apiUrl}${path}`, {
-      method: "POST",
-      cache: "no-store",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const payload = await parseResponse(response);
-    return payload as T;
+  private async apiPost<T = unknown>(
+    path: string,
+    body: unknown,
+    options?: {
+      trackFailure?: boolean;
+    }
+  ): Promise<T> {
+    try {
+      const response = await fetch(`${this.cfg.apiUrl}${path}`, {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const payload = await parseResponse(response);
+      this.recordApiSuccess();
+      return payload as T;
+    } catch (err) {
+      if (options?.trackFailure !== false) this.recordApiFailure(`POST ${path}`, err);
+      throw err;
+    }
   }
 }
 
