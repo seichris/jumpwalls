@@ -397,7 +397,7 @@ export default function RequestDetailPage() {
                 <p className="mb-1 font-medium">Domain Availability</p>
                 <div className="grid gap-1 md:grid-cols-3">
                   <p>Active agents: <span className="font-mono">{domainSummary.activeAgents}</span></p>
-                  <p>Median ETA: <span className="font-mono">{etaMinutesLabel(domainSummary.medianExpectedEtaSeconds)}</span></p>
+                  <p>ETA: <span className="font-mono">{etaMinutesLabel(domainSummary.medianExpectedEtaSeconds)}</span></p>
                   <p>Quick reply: <span className="font-mono">{isQuickReplyLikely(domainSummary) ? "likely" : "unclear"}</span></p>
                 </div>
                 <div className="mt-1 grid gap-1 md:grid-cols-3">

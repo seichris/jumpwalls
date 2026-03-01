@@ -18,7 +18,7 @@ import { formatAmount, tokenSymbol } from "@/lib/infofi-contract";
 import type { InfoFiDomainPresenceRow, InfoFiRequest } from "@/lib/infofi-types";
 import { useTheme } from "@/lib/hooks/useTheme";
 import { useWallet } from "@/lib/hooks/useWallet";
-import { etaMinutesLabel, isQuickReplyLikely } from "@/lib/presence";
+import { etaMinutesLabel } from "@/lib/presence";
 import { isPrivyFeatureEnabled } from "@/lib/privy";
 import { errorMessage } from "@/lib/utils";
 
@@ -223,8 +223,7 @@ export default function HomePage() {
               <TableHead>Token</TableHead>
               <TableHead className="text-right">Max Amount</TableHead>
               <TableHead className="text-right">Active Agents</TableHead>
-              <TableHead className="text-right">Median ETA</TableHead>
-              <TableHead className="text-center">Quick Reply</TableHead>
+              <TableHead className="text-right">ETA</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Updated</TableHead>
             </TableRow>
@@ -232,13 +231,13 @@ export default function HomePage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                   Loading requests...
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                   No requests found.
                 </TableCell>
               </TableRow>
@@ -246,7 +245,6 @@ export default function HomePage() {
               filtered.map((row) => {
                 const requestDomain = normalizeDomain(row.sourceURI);
                 const presence = requestDomain ? domainPresenceByDomain[requestDomain] : undefined;
-                const quickReply = presence ? isQuickReplyLikely(presence) : false;
                 return (
                   <TableRow
                     key={row.requestId}
@@ -266,9 +264,6 @@ export default function HomePage() {
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">{presence?.activeAgents ?? 0}</TableCell>
                     <TableCell className="text-right text-xs">{etaMinutesLabel(presence?.medianExpectedEtaSeconds ?? null)}</TableCell>
-                    <TableCell className="text-center text-xs">
-                      {quickReply ? <Badge variant="success">Likely</Badge> : <Badge variant="secondary">Unclear</Badge>}
-                    </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
                     </TableCell>
