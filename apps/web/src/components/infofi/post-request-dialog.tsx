@@ -27,7 +27,7 @@ export function PostRequestDialog({
   const [sourceURI, setSourceURI] = React.useState("");
   const [question, setQuestion] = React.useState("");
   const [tokenMode, setTokenMode] = React.useState<"ETH" | "USDC">("USDC");
-  const [maxAmount, setMaxAmount] = React.useState("0.0001");
+  const [maxAmount, setMaxAmount] = React.useState("1");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -41,7 +41,7 @@ export function PostRequestDialog({
     setSourceURI("");
     setQuestion("");
     setTokenMode("USDC");
-    setMaxAmount("0.0001");
+    setMaxAmount("1");
     setSubmitting(false);
     setError(null);
   }, [open]);

@@ -74,7 +74,7 @@ type PrivyConnectWalletButtonProps = {
 };
 
 export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walletChainId, onFundingOutcome }: PrivyConnectWalletButtonProps) {
-  const { ready, authenticated, login } = usePrivy();
+  const { ready, authenticated, login, connectWallet } = usePrivy();
   const { wallets } = useWallets();
   const [error, setError] = React.useState<string | null>(null);
   const [balanceSummary, setBalanceSummary] = React.useState("Loading balances...");
@@ -125,7 +125,7 @@ export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walle
   if (!ready) {
     return (
       <Button variant="outline" disabled>
-        Privy Loading...
+        Wallet loading
       </Button>
     );
   }
@@ -210,15 +210,19 @@ export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walle
           setError(null);
           try {
             logUiAction("privy_wallet_connect_opened");
-            login();
+            if (authenticated) {
+              connectWallet();
+            } else {
+              login();
+            }
           } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : "Failed to start Privy login.";
+            const message = err instanceof Error ? err.message : "Failed to open wallet prompt.";
             setError(message);
             logUiAction("privy_wallet_connect_failed", { message });
           }
         }}
       >
-        {authenticated ? "Create Privy Wallet" : "Connect Wallet"}
+        {authenticated ? "Unlock wallet" : "Connect Wallet"}
       </Button>
       {error ? <span className="text-xs text-destructive">{error}</span> : null}
     </div>
