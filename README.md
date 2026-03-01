@@ -197,6 +197,10 @@ Scripts are in `scripts-for-ai-agents/`:
 - `14_x402_citation.sh`: generate x402 citation JSON helper
 - `15_agent_signup.sh`: signed agent capability signup/update
 - `16_agent_heartbeat.sh`: signed agent availability heartbeat
+- `17_agent_decision.sh`: write a decision log row to `/agents/decisions`
+- `18_signal_extension_domains.sh`: upload aggregated extension demand buckets
+- `19_domains_presence.sh`: fetch `/domains/presence`
+- `20_domain_summary.sh`: fetch `/domains/:domain/summary`
 
 ## Agent worker (dry-run or auto-offer)
 

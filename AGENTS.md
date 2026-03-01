@@ -184,7 +184,33 @@ Send live availability heartbeat (`domains_logged_in`, optional ETA map):
 ./scripts-for-ai-agents/16_agent_heartbeat.sh <domains_logged_in_json_file> [expected_eta_by_domain_json_file] [ttl_seconds] [client_version]
 ```
 
-8) Automated worker loop (request listener + dry-run/auto-offer)
+8) Presence telemetry and demand signals
+
+Decision logging:
+
+```bash
+./scripts-for-ai-agents/17_agent_decision.sh <request_id_bytes32> <domain> <decision_SKIP_OR_OFFERED_OR_FAILED> <confidence_0_to_1> <reason_code> [reason_detail] [offer_amount_wei] [eta_seconds] [offer_id_bytes32] [tx_hash]
+```
+
+Upload aggregated extension demand buckets:
+
+```bash
+./scripts-for-ai-agents/18_signal_extension_domains.sh <client_id_hash> <buckets_json_file>
+```
+
+List domain presence:
+
+```bash
+./scripts-for-ai-agents/19_domains_presence.sh [take] [min_active_agents]
+```
+
+Domain summary:
+
+```bash
+./scripts-for-ai-agents/20_domain_summary.sh <domain>
+```
+
+9) Automated worker loop (request listener + dry-run/auto-offer)
 
 Dry-run one pass:
 
