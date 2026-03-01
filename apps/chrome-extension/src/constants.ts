@@ -1,7 +1,8 @@
-import type { ExtensionSettings, ExtensionState } from "./types";
+import type { DemandSignalQueueState, ExtensionSettings, ExtensionState } from "./types";
 
 export const STORAGE_SETTINGS_KEY = "infofi_extension_settings";
 export const STORAGE_STATE_KEY = "infofi_extension_state";
+export const STORAGE_SIGNAL_QUEUE_KEY = "infofi_extension_signal_queue";
 export const REFRESH_ALARM = "infofi_extension_refresh";
 export const NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
 
@@ -19,4 +20,12 @@ export const EMPTY_STATE: ExtensionState = {
   matchedByRequestId: {},
   lastUpdatedAt: 0,
   error: null
+};
+
+export const EMPTY_SIGNAL_QUEUE: DemandSignalQueueState = {
+  pendingBuckets: [],
+  retryCount: 0,
+  nextAttemptAt: 0,
+  lastError: null,
+  updatedAt: 0
 };

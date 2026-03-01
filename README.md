@@ -31,6 +31,8 @@ Instead of needing direct account access to every source, requesters pay provide
   - x402 reimbursement preview generation from citations
 - `apps/web/`:
   - full UI for posting, hiring, delivering, settling, ratings, and reimbursement-assisted payouts
+- `apps/agent-worker/`:
+  - autonomous worker for signed heartbeats, request listening, dry-run/auto-offer execution, and hired-job delivery
 - `apps/chrome-extension/`:
   - requester posting and provider offer flow from popup
   - open-request discovery + optional local history/domain matching
@@ -52,6 +54,7 @@ Instead of needing direct account access to every source, requesters pay provide
 - `contracts/`: Solidity contracts and Foundry tests (`contracts/src/InfoFi.sol`)
 - `apps/api/`: Fastify API + indexer + digest storage (`POST /digests`)
 - `apps/web/`: Next.js InfoFi web app
+- `apps/agent-worker/`: TS worker for automated consultant flows
 - `apps/chrome-extension/`: InfoFi Chrome extension
 - `scripts-for-ai-agents/`: terminal-first InfoFi workflow scripts
 
@@ -152,10 +155,17 @@ When `CONTRACT_KIND=infofi`, key endpoints are:
 - `POST /agents/challenge`
 - `POST /agents/signup`
 - `POST /agents/heartbeat`
+- `POST /agents/decisions`
 - `GET /agents/:address`
 - `GET /domains/presence`
 - `GET /domains/:domain/summary`
 - `POST /signals/extension/domains`
+
+Presence hardening:
+
+- Agent auth and signal ingestion endpoints enforce per-IP and per-identity rate limits.
+- Heartbeats are accepted only for domains covered by enabled signed capabilities.
+- Public `demandScore24h` is k-anonymized and redacted until enough unique clients contribute.
 
 ### Digest fair-use screening
 
@@ -188,6 +198,38 @@ Scripts are in `scripts-for-ai-agents/`:
 - `15_agent_signup.sh`: signed agent capability signup/update
 - `16_agent_heartbeat.sh`: signed agent availability heartbeat
 
+## Agent worker (dry-run or auto-offer)
+
+Run once in dry-run mode:
+
+```bash
+API_URL=http://localhost:8787 \
+PRIVATE_KEY=0x... \
+AGENT_MODE=dry-run \
+AGENT_ONCE=true \
+pnpm -C apps/agent-worker start
+```
+
+Continuous auto-offer mode (requires chain env):
+
+```bash
+API_URL=http://localhost:8787 \
+PRIVATE_KEY=0x... \
+AGENT_MODE=auto-offer \
+CHAIN_ID=8453 \
+RPC_URL=https://base-mainnet.g.alchemy.com/v2/<key> \
+CONTRACT_ADDRESS=0x... \
+pnpm -C apps/agent-worker start
+```
+
+Notes:
+
+- Worker also polls hired jobs for the consultant and can auto-deliver via `POST /digests` + `deliverDigest` when `AGENT_AUTO_DELIVER_ENABLED=true`.
+- Worker enters degraded mode after repeated API/heartbeat failures and pauses auto-offers until healthy heartbeats recover.
+- Auto-delivery retries use exponential backoff and reuse prior digest metadata for idempotent retry behavior.
+- Use `AGENT_DIGEST_TEMPLATE` to customize generated digest text with placeholders:
+  - `{jobId}`, `{requestId}`, `{sourceURI}`, `{question}`, `{generatedAt}`.
+
 Reference guide: `AGENTS.md`
 
 ## Chrome extension
@@ -207,10 +249,14 @@ Extension behavior:
 - Open request discovery from API
 - Optional history/domain matching for opportunities (requires explicit Chrome `history` permission)
 - Matching runs locally on-device; extension does not upload browsing history
+- Optional demand signal uploads are coarse per-domain hourly buckets, queued locally, and retried with backoff
 
 ## Test commands
 
 - Contracts: `pnpm contracts:test`
 - API typecheck: `pnpm -C apps/api typecheck`
+- API tests: `pnpm -C apps/api test`
 - Web tests: `pnpm -C apps/web test`
+- Agent worker typecheck: `pnpm -C apps/agent-worker typecheck`
+- Agent worker tests: `pnpm -C apps/agent-worker test`
 - Extension tests: `pnpm -C apps/chrome-extension test`

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "pnpm -C ../../packages/shared build && prisma generate && tsc -p tsconfig.json",
+    "test": "rm -f prisma/test.db && DATABASE_URL=file:./prisma/test.db prisma db push --skip-generate && DATABASE_URL=file:./prisma/test.db tsx --test src/*.test.ts",
     "lint": "eslint .",
     "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "format": "prettier -w .",

@@ -438,6 +438,16 @@ Per-domain:
 2. payload redaction tests (no raw URL leakage)
 3. batching and retry tests
 
+### End-of-project gate (add last)
+
+1. Run a single live smoke on Base mainnet-configured API:
+   - signed `POST /agents/signup` with at least one capability
+   - signed `POST /agents/heartbeat` with at least one logged-in domain
+   - `POST /signals/extension/domains` with one hourly bucket
+   - assert `GET /domains/:domain/summary` shows `activeAgents >= 1` and either:
+     - `demandScore24h > 0`, or
+     - `demandScore24hRedacted = true` with `demandUniqueClients24h > 0`
+
 ## Acceptance criteria
 
 1. Agent can register capabilities and send signed heartbeat.

@@ -10,8 +10,15 @@ import {
 import { domainMatches, extractDomainFromSource, extractDomainFromUrl, normalizeDomain } from "./domain";
 import { computeSubscriptionMatches } from "./matching";
 import { buildRefreshErrorState, buildRefreshSuccessState } from "./refresh-state";
-import { getSettings, getState, saveSettings, saveState } from "./storage";
-import type { BackgroundStateResponse, DomainMatch, RuntimeMessage } from "./types";
+import {
+  enqueueDemandSignalBuckets,
+  markDemandSignalUploadFailure,
+  markDemandSignalUploadSuccess,
+  nextDemandSignalBatch,
+  shouldUploadDemandSignals
+} from "./signal-queue";
+import { getSettings, getSignalQueue, getState, saveSettings, saveSignalQueue, saveState } from "./storage";
+import type { BackgroundStateResponse, DemandSignalQueueState, DomainMatch, RuntimeMessage } from "./types";
 
 async function historyPermissionGranted(): Promise<boolean> {
   return chrome.permissions.contains({ permissions: ["history"] });
@@ -27,6 +34,11 @@ async function updateBadge(matchCount: number): Promise<void> {
   await chrome.action.setBadgeBackgroundColor({ color: "#d12b2b" });
   await chrome.action.setBadgeText({ text: badgeTextFromMatchCount(matchCount) });
 }
+
+const DEMAND_SIGNAL_BATCH_SIZE = 50;
+const DEMAND_SIGNAL_MAX_PENDING = 500;
+const DEMAND_SIGNAL_RETRY_BASE_MS = 30_000;
+const DEMAND_SIGNAL_RETRY_MAX_MS = 6 * 60 * 60 * 1000;
 
 async function computeHistoryMatches(lookbackDays: number, openRequests: Awaited<ReturnType<typeof fetchOpenRequests>>) {
   const domainToRequests = new Map<string, typeof openRequests>();
@@ -85,6 +97,42 @@ function buildDemandSignalBuckets(
   }));
 }
 
+async function flushDemandSignalQueue(
+  apiUrl: string,
+  clientIdHash: string,
+  queue: DemandSignalQueueState
+): Promise<DemandSignalQueueState> {
+  let nextQueue = queue;
+  if (!shouldUploadDemandSignals(nextQueue)) return nextQueue;
+
+  while (nextQueue.pendingBuckets.length > 0 && shouldUploadDemandSignals(nextQueue)) {
+    const batch = nextDemandSignalBatch(nextQueue, DEMAND_SIGNAL_BATCH_SIZE);
+    if (batch.length === 0) break;
+    try {
+      await postExtensionDomainSignals(apiUrl, {
+        clientIdHash,
+        buckets: batch
+      });
+      nextQueue = markDemandSignalUploadSuccess(nextQueue, batch.length);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      // Demand-signal upload should not break refresh UX.
+      // eslint-disable-next-line no-console
+      console.warn("[infofi-extension] demand signal upload failed", reason);
+      nextQueue = markDemandSignalUploadFailure(
+        nextQueue,
+        reason,
+        Date.now(),
+        DEMAND_SIGNAL_RETRY_BASE_MS,
+        DEMAND_SIGNAL_RETRY_MAX_MS
+      );
+      break;
+    }
+  }
+
+  return nextQueue;
+}
+
 async function refreshState(): Promise<BackgroundStateResponse> {
   const settings = await getSettings();
   const apiUrl = normalizeApiUrl(settings.apiUrl);
@@ -114,18 +162,20 @@ async function refreshState(): Promise<BackgroundStateResponse> {
     await saveState(state);
     if (settings.shareDemandSignals && settings.demandSignalClientId) {
       const buckets = buildDemandSignalBuckets(openRequests, matchedByRequestId);
+      let queue = await getSignalQueue();
       if (buckets.length > 0) {
-        try {
-          await postExtensionDomainSignals(apiUrl, {
-            clientIdHash: settings.demandSignalClientId,
-            buckets
-          });
-        } catch (error) {
-          // Demand-signal upload should not break refresh UX.
-          // eslint-disable-next-line no-console
-          console.warn("[infofi-extension] demand signal upload failed", error);
-        }
+        queue = enqueueDemandSignalBuckets(queue, buckets, DEMAND_SIGNAL_MAX_PENDING);
       }
+      queue = await flushDemandSignalQueue(apiUrl, settings.demandSignalClientId, queue);
+      await saveSignalQueue(queue);
+    } else {
+      await saveSignalQueue({
+        pendingBuckets: [],
+        retryCount: 0,
+        nextAttemptAt: 0,
+        lastError: null,
+        updatedAt: Date.now()
+      });
     }
     await updateBadge(Object.keys(state.matchedByRequestId).length);
     return { settings, state };

@@ -8,6 +8,8 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "format": "pnpm -r format",
+    "agent-worker:dev": "pnpm -C apps/agent-worker dev",
+    "agent-worker:start": "pnpm -C apps/agent-worker start",
     "contracts:test": "forge test -q --root contracts --via-ir",
     "contracts:build": "forge build --root contracts",
     "contracts:anvil": "anvil",

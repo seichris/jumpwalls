@@ -182,6 +182,8 @@ export type InfoFiDomainPresenceRow = {
   hireToDeliverRate7d: number | null;
   medianFirstOfferLatencySeconds7d: number | null;
   demandScore24h: number;
+  demandUniqueClients24h: number;
+  demandScore24hRedacted: boolean;
   requestCount7d: number;
 };
 

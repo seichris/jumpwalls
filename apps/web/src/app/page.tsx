@@ -18,6 +18,7 @@ import { formatAmount, tokenSymbol } from "@/lib/infofi-contract";
 import type { InfoFiDomainPresenceRow, InfoFiRequest } from "@/lib/infofi-types";
 import { useTheme } from "@/lib/hooks/useTheme";
 import { useWallet } from "@/lib/hooks/useWallet";
+import { etaMinutesLabel, isQuickReplyLikely } from "@/lib/presence";
 import { isPrivyFeatureEnabled } from "@/lib/privy";
 import { errorMessage } from "@/lib/utils";
 
@@ -48,12 +49,6 @@ function normalizeDomain(input: string) {
       .split(/[/?#:]/)[0]
       .replace(/\.$/, "");
   }
-}
-
-function etaLabel(seconds: number | null) {
-  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return "—";
-  const minutes = Math.max(1, Math.round(seconds / 60));
-  return `${minutes}m`;
 }
 
 function statusVariant(status: string): "default" | "secondary" | "warning" | "success" {
@@ -229,6 +224,7 @@ export default function HomePage() {
               <TableHead className="text-right">Max Amount</TableHead>
               <TableHead className="text-right">Active Agents</TableHead>
               <TableHead className="text-right">Median ETA</TableHead>
+              <TableHead className="text-center">Quick Reply</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Updated</TableHead>
             </TableRow>
@@ -236,13 +232,13 @@ export default function HomePage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                   Loading requests...
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                   No requests found.
                 </TableCell>
               </TableRow>
@@ -250,6 +246,7 @@ export default function HomePage() {
               filtered.map((row) => {
                 const requestDomain = normalizeDomain(row.sourceURI);
                 const presence = requestDomain ? domainPresenceByDomain[requestDomain] : undefined;
+                const quickReply = presence ? isQuickReplyLikely(presence) : false;
                 return (
                   <TableRow
                     key={row.requestId}
@@ -268,7 +265,10 @@ export default function HomePage() {
                       {formatAmount(row.paymentToken, row.maxAmountWei)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">{presence?.activeAgents ?? 0}</TableCell>
-                    <TableCell className="text-right text-xs">{etaLabel(presence?.medianExpectedEtaSeconds ?? null)}</TableCell>
+                    <TableCell className="text-right text-xs">{etaMinutesLabel(presence?.medianExpectedEtaSeconds ?? null)}</TableCell>
+                    <TableCell className="text-center text-xs">
+                      {quickReply ? <Badge variant="success">Likely</Badge> : <Badge variant="secondary">Unclear</Badge>}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
                     </TableCell>
