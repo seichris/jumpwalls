@@ -17,11 +17,13 @@ export function PostRequestDialog({
   open,
   onOpenChange,
   walletAddress,
+  initialSourceURI,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   walletAddress: Address | null;
+  initialSourceURI?: string;
   onCreated?: (requestId: string) => void;
 }) {
   const [sourceURI, setSourceURI] = React.useState("");
@@ -38,13 +40,13 @@ export function PostRequestDialog({
 
   React.useEffect(() => {
     if (!open) return;
-    setSourceURI("");
+    setSourceURI(initialSourceURI?.trim() || "");
     setQuestion("");
     setTokenMode("USDC");
     setMaxAmount("1");
     setSubmitting(false);
     setError(null);
-  }, [open]);
+  }, [open, initialSourceURI]);
 
   const canSubmit = Boolean(walletAddress && sourceURI.trim() && question.trim() && Number(maxAmount) > 0);
 
