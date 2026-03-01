@@ -28,10 +28,18 @@ function shortHash(value: string) {
 
 function sourceHost(url: string) {
   try {
-    return new URL(url).host;
+    return new URL(url).host.replace(/^www\./i, "");
   } catch {
-    return url;
+    const trimmed = url.trim();
+    const withoutScheme = trimmed.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+    return withoutScheme.replace(/^www\./i, "").split(/[/?#]/)[0] || trimmed;
   }
+}
+
+function sourceFaviconUrl(url: string) {
+  const domain = normalizeDomain(url);
+  if (!domain) return null;
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
 }
 
 function normalizeDomain(input: string) {
@@ -245,6 +253,9 @@ export default function HomePage() {
               filtered.map((row) => {
                 const requestDomain = normalizeDomain(row.sourceURI);
                 const presence = requestDomain ? domainPresenceByDomain[requestDomain] : undefined;
+                const activeAgents = presence?.activeAgents ?? 0;
+                const sourceDisplay = sourceHost(row.sourceURI);
+                const sourceFavicon = sourceFaviconUrl(row.sourceURI);
                 return (
                   <TableRow
                     key={row.requestId}
@@ -256,13 +267,30 @@ export default function HomePage() {
                         {shortHash(row.requestId)}
                       </Link>
                     </TableCell>
-                    <TableCell className="max-w-[220px] truncate">{sourceHost(row.sourceURI)}</TableCell>
+                    <TableCell className="max-w-[220px]">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {sourceFavicon ? (
+                          <img
+                            src={sourceFavicon}
+                            alt=""
+                            className="size-4 shrink-0 rounded-sm"
+                            loading="lazy"
+                            decoding="async"
+                            referrerPolicy="no-referrer"
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : null}
+                        <span className="truncate">{sourceDisplay}</span>
+                      </div>
+                    </TableCell>
                     <TableCell className="max-w-[360px] truncate">{row.question}</TableCell>
                     <TableCell>{tokenSymbol(row.paymentToken)}</TableCell>
                     <TableCell className="text-right font-mono text-xs">
                       {formatAmount(row.paymentToken, row.maxAmountWei)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs">{presence?.activeAgents ?? 0}</TableCell>
+                    <TableCell className="text-right font-mono text-xs">{activeAgents > 0 ? activeAgents : "—"}</TableCell>
                     <TableCell className="text-right text-xs">{etaMinutesLabel(presence?.medianExpectedEtaSeconds ?? null)}</TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
