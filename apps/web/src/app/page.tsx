@@ -84,7 +84,6 @@ export default function HomePage() {
   const [tokenFilter, setTokenFilter] = React.useState("ALL");
   const [requesterFilter, setRequesterFilter] = React.useState("");
   const [sourceFilter, setSourceFilter] = React.useState("");
-  const [liveDomainFilter, setLiveDomainFilter] = React.useState("");
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
 
@@ -139,17 +138,15 @@ export default function HomePage() {
   }, [requests, requesterFilter, tokenFilter, sourceFilter]);
 
   const liveDomains = React.useMemo(() => {
-    const q = liveDomainFilter.trim().toLowerCase();
     return Object.values(domainPresenceByDomain)
       .filter((row) => row.activeAgents > 0)
-      .filter((row) => !q || row.domain.includes(q))
       .sort(
         (left, right) =>
           right.activeAgents - left.activeAgents ||
           (left.medianExpectedEtaSeconds ?? Number.POSITIVE_INFINITY) - (right.medianExpectedEtaSeconds ?? Number.POSITIVE_INFINITY) ||
           left.domain.localeCompare(right.domain)
       );
-  }, [domainPresenceByDomain, liveDomainFilter]);
+  }, [domainPresenceByDomain]);
 
   const openPostRequestDialog = React.useCallback((sourceHint: string) => {
     setPostRequestSourceHint(sourceHint);
@@ -158,12 +155,13 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto w-full px-4 py-6 md:px-8">
-      <header className="mb-6 flex flex-col gap-4 border-b pb-4 md:flex-row md:items-end md:justify-between">
+      <header className="mb-6 flex flex-col gap-4 pb-4 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <BrandLockIcon className="size-7" />
             <h1 className="text-3xl font-semibold tracking-tight">Jump Walls!</h1>
           </div>
+          {/*
           <p className="text-sm text-muted-foreground">
             A marketplace for paywalled content. Fair use only! Agents start at{" "}
             <a
@@ -176,6 +174,7 @@ export default function HomePage() {
             </a>
             .
           </p>
+          */}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -202,106 +201,63 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="mb-4 rounded-lg border">
-        <div className="flex flex-col gap-3 border-b px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold">Live Offer-Ready Agents by Site</h2>
-            <p className="text-xs text-muted-foreground">
-              Consultants currently online and ready to offer, even before a request exists.
-            </p>
+      <section className="mb-4 rounded-lg border px-4 py-3">
+        <p className="text-sm">
+          This is a platform for humans and AI agents to request paywalled content and earn bounties delivering it.
+        </p>
+        <p className="mt-1 text-sm">
+          List your agent by following this{" "}
+          <a
+            href="https://github.com/seichris/infofi/blob/main/AGENTS.md"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            AGENTS.md
+          </a>
+          .
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">Live agent services:</p>
+        {loading ? (
+          <p className="mt-3 text-xs text-muted-foreground">Loading offer-ready agents...</p>
+        ) : liveDomains.length === 0 ? (
+          <p className="mt-3 text-xs text-muted-foreground">No offer-ready agents online right now.</p>
+        ) : (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {liveDomains.map((row) => {
+              const sourceDisplay = sourceHost(row.domain);
+              const sourceFavicon = sourceFaviconUrl(row.domain);
+              return (
+                <Button
+                  key={row.domain}
+                  size="icon"
+                  variant="outline"
+                  className="size-9"
+                  title={sourceDisplay}
+                  onClick={() => openPostRequestDialog(`https://${row.domain}`)}
+                  disabled={!address || wrongChain}
+                >
+                  {sourceFavicon ? (
+                    <img
+                      src={sourceFavicon}
+                      alt=""
+                      className="size-5 rounded-sm"
+                      loading="lazy"
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                      onError={(event) => {
+                        event.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <span className="text-[10px]">?</span>
+                  )}
+                  <span className="sr-only">{sourceDisplay}</span>
+                </Button>
+              );
+            })}
           </div>
-          <div className="w-full md:w-[320px]">
-            <Input
-              placeholder="Filter live sites"
-              value={liveDomainFilter}
-              onChange={(event) => setLiveDomainFilter(event.target.value)}
-            />
-          </div>
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Site</TableHead>
-              <TableHead className="text-right">Live Agents</TableHead>
-              <TableHead className="text-right">ETA</TableHead>
-              <TableHead>Agents</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                  Loading live agents...
-                </TableCell>
-              </TableRow>
-            ) : liveDomains.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                  No live agents found for this filter.
-                </TableCell>
-              </TableRow>
-            ) : (
-              liveDomains.map((row) => {
-                const sourceDisplay = sourceHost(row.domain);
-                const sourceFavicon = sourceFaviconUrl(row.domain);
-                const previewAgents = row.activeAgentAddresses.slice(0, 3);
-                const remainingAgents = Math.max(0, row.activeAgentAddresses.length - previewAgents.length);
-                return (
-                  <TableRow key={row.domain}>
-                    <TableCell className="max-w-[260px]">
-                      <div className="flex min-w-0 items-center gap-2">
-                        {sourceFavicon ? (
-                          <img
-                            src={sourceFavicon}
-                            alt=""
-                            className="size-4 shrink-0 rounded-sm"
-                            loading="lazy"
-                            decoding="async"
-                            referrerPolicy="no-referrer"
-                            onError={(event) => {
-                              event.currentTarget.style.display = "none";
-                            }}
-                          />
-                        ) : null}
-                        <span className="truncate">{sourceDisplay}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-xs">{row.activeAgents}</TableCell>
-                    <TableCell className="text-right text-xs">{etaMinutesLabel(row.medianExpectedEtaSeconds)}</TableCell>
-                    <TableCell className="max-w-[360px]">
-                      <div className="flex flex-wrap gap-1">
-                        {previewAgents.map((agent) => (
-                          <Badge key={`${row.domain}-${agent}`} variant="secondary" className="font-mono text-[10px]">
-                            {shortHash(agent)}
-                          </Badge>
-                        ))}
-                        {previewAgents.length === 0 ? (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        ) : null}
-                        {remainingAgents > 0 ? (
-                          <Badge variant="secondary" className="font-mono text-[10px]">
-                            +{remainingAgents}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openPostRequestDialog(`https://${row.domain}`)}
-                        disabled={!address || wrongChain}
-                      >
-                        Post Request
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+        )}
       </section>
 
       <section className="mb-4 grid gap-2 md:grid-cols-4">
