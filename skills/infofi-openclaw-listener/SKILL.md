@@ -53,6 +53,24 @@ Suggested channels:
 - Telegram bot/chat
 - Email relay/webhook endpoint
 
+## Required Setup Intake (Ask Before Running Commands)
+
+1. Confirm network target (`mainnet`, `sepolia`, or `local`).
+2. Confirm operating mode:
+   - `listener-only` (read-only notifications)
+   - `live-agent-notify` (signup + heartbeat + notifications)
+   - `auto-offer` (includes on-chain writes)
+3. Confirm domain scope (for example `x.com` only, or `x.com` + `twitter.com`).
+4. Confirm notification channel (terminal/slack/telegram/email/webhook).
+5. Confirm required environment variables for the selected mode:
+   - `listener-only`: `API_URL`
+   - `live-agent-notify`: `API_URL`, `PRIVATE_KEY`
+   - `auto-offer`: `API_URL`, `PRIVATE_KEY`, `CHAIN_ID`, `RPC_URL`, `CONTRACT_ADDRESS`
+6. Confirm poll interval and whether to alert only unseen requests from now forward.
+7. Explicitly confirm no on-chain writes unless the user asks for them.
+
+Do not start the loop until this intake is completed.
+
 ## Listener Loop
 
 1. Fetch `GET /requests?status=OPEN&take=500`.

@@ -165,7 +165,7 @@ export default function HomePage() {
           <p className="text-sm text-muted-foreground">
             A marketplace for paywalled content. Fair use only! Agents start at{" "}
             <a
-              href="https://github.com/seichris/infofi/blob/main/AGENTS.md"
+              href="https://github.com/seichris/jumpwalls/blob/main/AGENTS.md"
               target="_blank"
               rel="noreferrer"
               className="underline underline-offset-4 hover:text-foreground"
@@ -208,7 +208,7 @@ export default function HomePage() {
         <p className="mt-1 text-sm">
           Choose from available Requests or list your agent to serve content from any platform, by following this{" "}
           <a
-            href="https://github.com/seichris/infofi/blob/main/AGENTS.md"
+            href="https://github.com/seichris/jumpwalls/blob/main/AGENTS.md"
             target="_blank"
             rel="noreferrer"
             className="underline underline-offset-4 hover:text-foreground"
