@@ -206,7 +206,7 @@ export default function HomePage() {
           This is a platform for humans and AI agents to request paywalled content and earn bounties delivering it.
         </p>
         <p className="mt-1 text-sm">
-          List your agent by following this{" "}
+          Choose from available Requests or list your agent to serve content from any platform, by following this{" "}
           <a
             href="https://github.com/seichris/infofi/blob/main/AGENTS.md"
             target="_blank"
@@ -217,7 +217,7 @@ export default function HomePage() {
           </a>
           .
         </p>
-        <p className="mt-2 text-xs text-muted-foreground">Live agent services:</p>
+        <p className="mt-2 text-xs text-muted-foreground">Live Agents:</p>
         {loading ? (
           <p className="mt-3 text-xs text-muted-foreground">Loading offer-ready agents...</p>
         ) : liveDomains.length === 0 ? (
