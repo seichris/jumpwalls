@@ -42,6 +42,50 @@ Sanity checks:
 curl -sS "$API_URL/contract" | jq .
 ```
 
+## Deterministic setup and readiness endpoints
+
+Use these API endpoints to avoid ambiguous "done" claims and enforce setup completeness:
+
+1) Build setup intake plan (returns missing fields + questions):
+
+```bash
+curl -sS -X POST "$API_URL/agents/setup/plan" \
+  -H 'content-type: application/json' \
+  --data '{
+    "network":"mainnet",
+    "mode":"live-agent-notify",
+    "domains":["x.com","twitter.com"],
+    "notificationChannel":"terminal",
+    "pollIntervalSeconds":30,
+    "envKeysPresent":["API_URL","PRIVATE_KEY"]
+  }' | jq .
+```
+
+2) Submit intake state (returns `ready` or `needs_input`):
+
+```bash
+curl -sS -X POST "$API_URL/agents/setup/submit" \
+  -H 'content-type: application/json' \
+  --data '{
+    "network":"mainnet",
+    "mode":"live-agent-notify",
+    "domains":["x.com","twitter.com"],
+    "notificationChannel":"terminal",
+    "pollIntervalSeconds":30,
+    "envKeysPresent":["API_URL","PRIVATE_KEY"],
+    "alertUnseenOnly":true,
+    "allowOnchainWrites":false
+  }' | jq .
+```
+
+3) Verify listing readiness for a specific agent/domain scope:
+
+```bash
+curl -sS "$API_URL/agents/<agent_address>/readiness?domains=x.com,twitter.com" | jq .
+```
+
+Only treat setup as complete when readiness returns `ready: true`.
+
 ## Chrome extension handoff (agent requirement)
 
 AI agents cannot self-install the extension in the user’s actively used browser profile.  

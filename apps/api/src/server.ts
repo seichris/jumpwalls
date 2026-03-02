@@ -28,6 +28,7 @@ type ParsedAgentCapability = {
   proofTypeDefault: string | null;
   isEnabled: boolean;
 };
+type AgentSetupMode = "listener-only" | "live-agent-notify" | "auto-offer";
 
 export async function buildServer() {
   const app = Fastify({ logger: true });
@@ -353,6 +354,266 @@ export async function buildServer() {
     return { capabilities: parsed };
   }
 
+  function parseDomainList(raw: unknown) {
+    if (!Array.isArray(raw)) return [] as string[];
+    return Array.from(
+      new Set(
+        raw
+          .map((entry) => (typeof entry === "string" ? normalizeDomain(entry) : ""))
+          .filter((entry) => entry.length > 0)
+      )
+    );
+  }
+
+  function parseRequestedDomainsFromInput(data: Record<string, unknown>) {
+    const fromList = parseDomainList(data.domains);
+    const fromSingle = typeof data.domain === "string" ? [normalizeDomain(data.domain)] : [];
+    const fromCsv =
+      typeof data.domainsCsv === "string"
+        ? data.domainsCsv
+            .split(",")
+            .map((entry) => normalizeDomain(entry))
+            .filter(Boolean)
+        : [];
+    return Array.from(new Set([...fromList, ...fromSingle, ...fromCsv].filter(Boolean)));
+  }
+
+  function parseRequestedDomainsFromQuery(data: Record<string, unknown>) {
+    const domainsRaw = typeof data.domains === "string" ? data.domains : "";
+    const domainRaw = typeof data.domain === "string" ? data.domain : "";
+    return Array.from(
+      new Set(
+        [...domainsRaw.split(","), ...domainRaw.split(",")]
+          .map((entry) => normalizeDomain(entry))
+          .filter(Boolean)
+      )
+    );
+  }
+
+  function parseSetupMode(raw: unknown) {
+    const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (value === "listener-only" || value === "live-agent-notify" || value === "auto-offer") {
+      return value as AgentSetupMode;
+    }
+    return null;
+  }
+
+  function parseNotificationChannel(raw: unknown) {
+    const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+    if (!value) return null;
+    if (["terminal", "slack", "telegram", "email", "webhook"].includes(value)) return value;
+    return null;
+  }
+
+  function extractProvidedEnvKeys(data: Record<string, unknown>) {
+    const keys = new Set<string>();
+
+    const envKeysRaw = data.envKeysPresent;
+    if (Array.isArray(envKeysRaw)) {
+      for (const keyRaw of envKeysRaw) {
+        if (typeof keyRaw !== "string") continue;
+        const key = keyRaw.trim().toUpperCase();
+        if (key) keys.add(key);
+      }
+    }
+
+    const envRaw = data.env;
+    if (envRaw && typeof envRaw === "object" && !Array.isArray(envRaw)) {
+      for (const [keyRaw, value] of Object.entries(envRaw as Record<string, unknown>)) {
+        const key = keyRaw.trim().toUpperCase();
+        if (!key) continue;
+        if (typeof value === "string" && !value.trim()) continue;
+        if (value == null) continue;
+        keys.add(key);
+      }
+    }
+
+    return keys;
+  }
+
+  function buildSetupPlan(input: Record<string, unknown>) {
+    const networkRaw = typeof input.network === "string" ? input.network.trim().toLowerCase() : "";
+    const network = ["mainnet", "sepolia", "local"].includes(networkRaw) ? networkRaw : null;
+    const mode = parseSetupMode(input.mode);
+    const domains = parseRequestedDomainsFromInput(input);
+    const notificationChannel = parseNotificationChannel(input.notificationChannel);
+    const pollIntervalSecondsRaw = parsePositiveInt(input.pollIntervalSeconds, -1);
+    const pollIntervalSeconds = pollIntervalSecondsRaw > 0 ? pollIntervalSecondsRaw : null;
+    const alertUnseenOnly = typeof input.alertUnseenOnly === "boolean" ? input.alertUnseenOnly : true;
+    const allowOnchainWrites = typeof input.allowOnchainWrites === "boolean" ? input.allowOnchainWrites : false;
+    const envKeysPresent = Array.from(extractProvidedEnvKeys(input)).sort();
+    const envKeySet = new Set(envKeysPresent);
+    const requestedDomains = Array.from(new Set(domains)).sort();
+
+    const missing: string[] = [];
+    const questions: string[] = [];
+    const warnings: string[] = [];
+
+    if (!network) {
+      missing.push("network");
+      questions.push("Which network should I target: mainnet, sepolia, or local?");
+    }
+    if (!mode) {
+      missing.push("mode");
+      questions.push("Which mode should I run: listener-only, live-agent-notify, or auto-offer?");
+    }
+    if (requestedDomains.length === 0) {
+      missing.push("domains");
+      questions.push("Which domains should this service cover?");
+    }
+    if (!notificationChannel) {
+      missing.push("notificationChannel");
+      questions.push("Which notification channel should I use: terminal, slack, telegram, email, or webhook?");
+    }
+    if (!pollIntervalSeconds) {
+      missing.push("pollIntervalSeconds");
+      questions.push("What polling interval (seconds) should I use?");
+    }
+
+    if (requestedDomains.includes("x.com") && !requestedDomains.includes("twitter.com")) {
+      warnings.push("Consider also adding twitter.com for legacy X links.");
+    }
+
+    const requiredEnvKeysByMode: Record<AgentSetupMode, string[]> = {
+      "listener-only": ["API_URL"],
+      "live-agent-notify": ["API_URL", "PRIVATE_KEY"],
+      "auto-offer": ["API_URL", "PRIVATE_KEY", "CHAIN_ID", "RPC_URL", "CONTRACT_ADDRESS"]
+    };
+    const requiredEnvKeys = mode ? requiredEnvKeysByMode[mode] : [];
+    const missingEnvKeys = requiredEnvKeys.filter((key) => !envKeySet.has(key));
+    for (const key of missingEnvKeys) {
+      missing.push(`env.${key}`);
+      questions.push(`Please provide or confirm ${key}.`);
+    }
+
+    if (mode === "auto-offer" && !allowOnchainWrites) {
+      missing.push("allowOnchainWrites");
+      questions.push("Auto-offer performs on-chain writes. Do you approve on-chain writes for this setup?");
+    }
+
+    return {
+      normalized: {
+        network,
+        mode,
+        domains: requestedDomains,
+        notificationChannel,
+        pollIntervalSeconds,
+        alertUnseenOnly,
+        allowOnchainWrites,
+        envKeysPresent
+      },
+      missing,
+      questions,
+      warnings,
+      readyForExecution: missing.length === 0
+    };
+  }
+
+  async function computeAgentReadiness(agentAddress: string, requestedDomains: string[]) {
+    const [profile, capabilities, latestHeartbeat] = await Promise.all([
+      prisma.infoFiAgentProfile.findFirst({
+        where: { ...scopedWhere(), agentAddress }
+      }),
+      prisma.infoFiAgentCapability.findMany({
+        where: { ...scopedWhere(), agentAddress },
+        orderBy: [{ domain: "asc" }, { paymentToken: "asc" }]
+      }),
+      prisma.infoFiAgentHeartbeat.findFirst({
+        where: { ...scopedWhere(), agentAddress },
+        orderBy: { lastSeenAt: "desc" }
+      })
+    ]);
+
+    const nowMs = Date.now();
+    const enabledCapabilities = capabilities.filter((capability) => capability.isEnabled);
+    const capabilityDomains = Array.from(
+      new Set(enabledCapabilities.map((capability) => normalizeDomain(capability.domain)).filter(Boolean))
+    );
+    const heartbeatDomains = latestHeartbeat
+      ? Array.from(new Set(parseStringArrayJson(latestHeartbeat.domainsLoggedInJson).map((entry) => normalizeDomain(entry)).filter(Boolean)))
+      : [];
+    const hasActiveHeartbeat = Boolean(latestHeartbeat && latestHeartbeat.expiresAt.getTime() > nowMs);
+    const profileStatus = profile?.status ? String(profile.status).toUpperCase() : null;
+    const isProfileActive = profileStatus === "ACTIVE";
+
+    const listedDomains = hasActiveHeartbeat
+      ? heartbeatDomains.filter((domain) => capabilityDomains.some((capabilityDomain) => domainsOverlap(capabilityDomain, domain)))
+      : [];
+    const sortedListedDomains = Array.from(new Set(listedDomains)).sort();
+
+    const requested = Array.from(new Set(requestedDomains.map((domain) => normalizeDomain(domain)).filter(Boolean))).sort();
+    const uncoveredCapabilities = requested.filter(
+      (domain) => !capabilityDomains.some((capabilityDomain) => domainsOverlap(capabilityDomain, domain))
+    );
+    const notLive = requested.filter((domain) => !sortedListedDomains.some((listedDomain) => domainsOverlap(listedDomain, domain)));
+
+    const missingRequirements: string[] = [];
+    const nextActions: string[] = [];
+
+    if (!profile) {
+      missingRequirements.push("agent_profile");
+      nextActions.push("Run /agents/signup to create the agent profile and capabilities.");
+    }
+    if (profile && !isProfileActive) {
+      missingRequirements.push("profile_status_active");
+      nextActions.push("Update agent profile status to ACTIVE via /agents/signup.");
+    }
+    if (enabledCapabilities.length === 0) {
+      missingRequirements.push("enabled_capabilities");
+      nextActions.push("Add at least one enabled capability via /agents/signup.");
+    }
+    if (!latestHeartbeat) {
+      missingRequirements.push("heartbeat");
+      nextActions.push("Send a signed heartbeat via /agents/heartbeat.");
+    } else if (!hasActiveHeartbeat) {
+      missingRequirements.push("active_heartbeat");
+      nextActions.push("Send a fresh heartbeat (previous heartbeat is expired).");
+    }
+    if (requested.length > 0 && uncoveredCapabilities.length > 0) {
+      missingRequirements.push("requested_domain_capability");
+      nextActions.push("Add capabilities covering requested domains.");
+    }
+    if (requested.length > 0 && notLive.length > 0) {
+      missingRequirements.push("requested_domain_live");
+      nextActions.push("Heartbeat must include requested domains in domainsLoggedIn.");
+    }
+
+    const readyBase = Boolean(profile && isProfileActive && enabledCapabilities.length > 0 && hasActiveHeartbeat && sortedListedDomains.length > 0);
+    const ready = requested.length === 0 ? readyBase : readyBase && uncoveredCapabilities.length === 0 && notLive.length === 0;
+
+    return {
+      ready,
+      chainScope: chainScopeData(),
+      agentAddress,
+      profile: profile
+        ? {
+            status: profileStatus,
+            displayName: profile.displayName,
+            updatedAt: profile.updatedAt.toISOString()
+          }
+        : null,
+      hasEnabledCapabilities: enabledCapabilities.length > 0,
+      enabledCapabilityCount: enabledCapabilities.length,
+      capabilityDomains,
+      heartbeat: latestHeartbeat
+        ? {
+            lastSeenAt: latestHeartbeat.lastSeenAt.toISOString(),
+            expiresAt: latestHeartbeat.expiresAt.toISOString(),
+            isActive: hasActiveHeartbeat,
+            domainsLoggedIn: heartbeatDomains
+          }
+        : null,
+      listedDomains: sortedListedDomains,
+      requestedDomains: requested,
+      requestedDomainsCoverage: {
+        uncoveredCapabilities,
+        notLive
+      },
+      missingRequirements: Array.from(new Set(missingRequirements)),
+      nextActions: Array.from(new Set(nextActions))
+    };
+  }
+
   async function computeDomainPresenceRows(domainFilter?: string) {
     const now = new Date();
     const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -595,6 +856,31 @@ export async function buildServer() {
   await app.register(cors, { origin: corsOrigin, credentials: true });
 
   app.get("/health", async () => ({ ok: true }));
+
+  app.post("/agents/setup/plan", async (req, reply) => {
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const plan = buildSetupPlan(data);
+    return reply.send({ plan });
+  });
+
+  app.post("/agents/setup/submit", async (req, reply) => {
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const plan = buildSetupPlan(data);
+    return reply.send({
+      setup: {
+        status: plan.readyForExecution ? "ready" : "needs_input",
+        plan
+      }
+    });
+  });
 
   app.post("/agents/challenge", async (req, reply) => {
     const challengeIpLimit = consumeRateLimit(
@@ -1030,6 +1316,16 @@ export async function buildServer() {
     });
 
     return reply.code(201).send({ decision: created });
+  });
+
+  app.get("/agents/:address/readiness", async (req, reply) => {
+    const params = req.params as { address?: string };
+    const q = req.query as { domains?: string; domain?: string };
+    const agentAddress = normalizeAddress(params.address || "");
+    if (!agentAddress) return reply.code(400).send({ error: "Invalid agent address" });
+    const requestedDomains = parseRequestedDomainsFromQuery(q as Record<string, unknown>);
+    const readiness = await computeAgentReadiness(agentAddress, requestedDomains);
+    return reply.send({ readiness });
   });
 
   app.get("/agents/:address", async (req, reply) => {
