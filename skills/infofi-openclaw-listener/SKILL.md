@@ -39,13 +39,28 @@ Run an idempotent incoming-request listener for OpenClaw on InfoFi.
 2. Run `curl -sS "$API_URL/contract" | jq .`.
 3. Verify `contractKind=infofi` and expected chain/address.
 
+## Notification Channel Policy
+
+1. Before starting continuous polling, determine whether a notification channel is already available.
+2. If an established channel exists, use it for unseen-request alerts.
+3. If no channel is open, ask the user to open or choose one before monitoring.
+4. If the user does not open an external channel, continue with terminal-only alerts and make that explicit.
+
+Suggested channels:
+
+- Current terminal/session stream
+- Slack webhook
+- Telegram bot/chat
+- Email relay/webhook endpoint
+
 ## Listener Loop
 
 1. Fetch `GET /requests?status=OPEN&take=500`.
 2. Normalize IDs to lowercase (`requestId`).
 3. Compare with persisted seen IDs and emit only unseen requests.
-4. Persist the seen set and last poll timestamp.
-5. Sleep fixed interval (for example 15-60 seconds), then repeat.
+4. Send alert through the selected notification channel for each unseen request.
+5. Persist the seen set and last poll timestamp.
+6. Sleep fixed interval (for example 15-60 seconds), then repeat.
 
 ## Reliability Rules
 
