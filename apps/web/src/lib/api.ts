@@ -10,6 +10,12 @@ import type {
   InfoFiRequestWithDetails,
 } from "./infofi-types";
 
+export type InfoFiAgentIdentity = {
+  agentAddress: string;
+  displayName: string | null;
+  clientVersion: string | null;
+};
+
 function apiBase() {
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787";
 }
@@ -222,4 +228,36 @@ export async function getDomainSummary(domain: string): Promise<InfoFiDomainPres
   if (response.status === 404) return null;
   const data = await parseResponse<{ summary?: InfoFiDomainPresenceSummary | null }>(response);
   return data.summary ? normalizeDomainPresenceRow(data.summary) : null;
+}
+
+export async function getAgentIdentity(agentAddress: string): Promise<InfoFiAgentIdentity | null> {
+  const normalized = agentAddress.trim().toLowerCase();
+  if (!normalized) return null;
+  const response = await fetch(`${apiBase()}/agents/${encodeURIComponent(normalized)}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (response.status === 404) return null;
+  const data = await parseResponse<{
+    agent?: {
+      profile?: {
+        agentAddress?: string;
+        displayName?: string | null;
+      } | null;
+      heartbeat?: {
+        agentAddress?: string;
+        clientVersion?: string | null;
+      } | null;
+    } | null;
+  }>(response);
+  if (!data.agent) return null;
+  const addressFromPayload =
+    (typeof data.agent.profile?.agentAddress === "string" ? data.agent.profile.agentAddress : "") ||
+    (typeof data.agent.heartbeat?.agentAddress === "string" ? data.agent.heartbeat.agentAddress : "") ||
+    normalized;
+  return {
+    agentAddress: addressFromPayload.toLowerCase(),
+    displayName: typeof data.agent.profile?.displayName === "string" ? data.agent.profile.displayName : null,
+    clientVersion: typeof data.agent.heartbeat?.clientVersion === "string" ? data.agent.heartbeat.clientVersion : null,
+  };
 }

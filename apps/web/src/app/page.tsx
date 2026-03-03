@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getDomainPresence, getRequests } from "@/lib/api";
+import { getAgentIdentity, getDomainPresence, getRequests } from "@/lib/api";
 import { formatAmount, tokenSymbol } from "@/lib/infofi-contract";
 import type { InfoFiDomainPresenceRow, InfoFiRequest } from "@/lib/infofi-types";
 import { useTheme } from "@/lib/hooks/useTheme";
@@ -70,44 +70,146 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
   return "secondary";
 }
 
+type AgentRuntimeKind = "openclaw" | "kimiclaw" | "ironclaw" | "claude" | "gpt" | "agent";
+
+const RUNTIME_PRIORITY: AgentRuntimeKind[] = ["openclaw", "kimiclaw", "ironclaw", "claude", "gpt", "agent"];
+
+const RUNTIME_BADGE_META: Record<AgentRuntimeKind, { label: string; title: string; className: string }> = {
+  openclaw: {
+    label: "OC",
+    title: "OpenClaw",
+    className: "bg-sky-600 text-white",
+  },
+  kimiclaw: {
+    label: "KC",
+    title: "KimiClaw",
+    className: "bg-emerald-600 text-white",
+  },
+  ironclaw: {
+    label: "IC",
+    title: "IronClaw",
+    className: "bg-zinc-700 text-white",
+  },
+  claude: {
+    label: "CL",
+    title: "Claude",
+    className: "bg-amber-600 text-white",
+  },
+  gpt: {
+    label: "GPT",
+    title: "GPT",
+    className: "bg-green-600 text-white",
+  },
+  agent: {
+    label: "AI",
+    title: "Agent",
+    className: "bg-slate-600 text-white",
+  },
+};
+
+function inferRuntime(version: string | null | undefined, displayName: string | null | undefined): AgentRuntimeKind | null {
+  const raw = `${version ?? ""} ${displayName ?? ""}`.trim().toLowerCase();
+  if (!raw) return null;
+  if (raw.includes("openclaw")) return "openclaw";
+  if (raw.includes("kimiclaw")) return "kimiclaw";
+  if (raw.includes("ironclaw")) return "ironclaw";
+  if (raw.includes("claude")) return "claude";
+  if (raw.includes("gpt") || raw.includes("chatgpt")) return "gpt";
+  if (raw.includes("agent") || raw.includes("bot") || raw.includes("worker")) return "agent";
+  return null;
+}
+
+function dominantRuntime(
+  addresses: string[] | undefined,
+  runtimeByAddress: Record<string, AgentRuntimeKind | null>
+): AgentRuntimeKind | null {
+  if (!addresses || addresses.length === 0) return null;
+  const counts = new Map<AgentRuntimeKind, number>();
+  for (const addr of addresses) {
+    const runtime = runtimeByAddress[addr.toLowerCase()];
+    if (!runtime) continue;
+    counts.set(runtime, (counts.get(runtime) || 0) + 1);
+  }
+  if (counts.size === 0) return null;
+
+  let winner: AgentRuntimeKind | null = null;
+  let winnerCount = -1;
+  for (const runtime of RUNTIME_PRIORITY) {
+    const count = counts.get(runtime) || 0;
+    if (count > winnerCount) {
+      winner = runtime;
+      winnerCount = count;
+    }
+  }
+  return winner;
+}
+
 function SourceFavicon({
   source,
   className,
   showFallback = false,
+  runtime,
 }: {
   source: string;
   className: string;
   showFallback?: boolean;
+  runtime?: AgentRuntimeKind | null;
 }) {
   const urls = React.useMemo(() => sourceFaviconUrls(source), [source]);
   const [index, setIndex] = React.useState(0);
+  const runtimeBadge = runtime ? RUNTIME_BADGE_META[runtime] : null;
 
   React.useEffect(() => {
     setIndex(0);
   }, [source]);
 
   if (urls.length === 0 || index >= urls.length) {
-    return showFallback ? <span className="text-[10px]">?</span> : null;
+    if (!showFallback && !runtimeBadge) return null;
+    return (
+      <span className="relative inline-flex">
+        {showFallback ? <span className="text-[10px]">?</span> : null}
+        {runtimeBadge ? (
+          <span
+            title={runtimeBadge.title}
+            aria-label={runtimeBadge.title}
+            className={`absolute -bottom-1 -right-1 inline-flex min-w-3 items-center justify-center rounded-full border border-background px-1 text-[8px] font-semibold leading-none ${runtimeBadge.className}`}
+          >
+            {runtimeBadge.label}
+          </span>
+        ) : null}
+      </span>
+    );
   }
 
   return (
-    <img
-      src={urls[index]}
-      alt=""
-      className={className}
-      loading="lazy"
-      decoding="async"
-      referrerPolicy="no-referrer"
-      onLoad={(event) => {
-        if (index !== 0) return;
-        if (event.currentTarget.naturalWidth <= 16 && event.currentTarget.naturalHeight <= 16) {
+    <span className="relative inline-flex">
+      <img
+        src={urls[index]}
+        alt=""
+        className={className}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onLoad={(event) => {
+          if (index !== 0) return;
+          if (event.currentTarget.naturalWidth <= 16 && event.currentTarget.naturalHeight <= 16) {
+            setIndex((current) => current + 1);
+          }
+        }}
+        onError={() => {
           setIndex((current) => current + 1);
-        }
-      }}
-      onError={() => {
-        setIndex((current) => current + 1);
-      }}
-    />
+        }}
+      />
+      {runtimeBadge ? (
+        <span
+          title={runtimeBadge.title}
+          aria-label={runtimeBadge.title}
+          className={`absolute -bottom-1 -right-1 inline-flex min-w-3 items-center justify-center rounded-full border border-background px-1 text-[8px] font-semibold leading-none ${runtimeBadge.className}`}
+        >
+          {runtimeBadge.label}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -120,6 +222,7 @@ export default function HomePage() {
 
   const [requests, setRequests] = React.useState<InfoFiRequest[]>([]);
   const [domainPresenceByDomain, setDomainPresenceByDomain] = React.useState<Record<string, InfoFiDomainPresenceRow>>({});
+  const [agentRuntimeByAddress, setAgentRuntimeByAddress] = React.useState<Record<string, AgentRuntimeKind | null>>({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [openPostRequest, setOpenPostRequest] = React.useState(false);
@@ -153,6 +256,38 @@ export default function HomePage() {
         return acc;
       }, {});
       setDomainPresenceByDomain(byDomain);
+
+      const uniqueAgentAddresses = Array.from(
+        new Set(
+          domainPresence
+            .flatMap((row) => row.activeAgentAddresses)
+            .map((entry) => entry.toLowerCase())
+            .filter(Boolean)
+        )
+      );
+
+      if (uniqueAgentAddresses.length === 0) {
+        setAgentRuntimeByAddress({});
+      } else {
+        const identities = await Promise.all(
+          uniqueAgentAddresses.map(async (agentAddress) => {
+            try {
+              return await getAgentIdentity(agentAddress);
+            } catch {
+              return null;
+            }
+          })
+        );
+        const byAddress: Record<string, AgentRuntimeKind | null> = {};
+        for (const agentAddress of uniqueAgentAddresses) {
+          byAddress[agentAddress] = null;
+        }
+        for (const identity of identities) {
+          if (!identity) continue;
+          byAddress[identity.agentAddress.toLowerCase()] = inferRuntime(identity.clientVersion, identity.displayName);
+        }
+        setAgentRuntimeByAddress(byAddress);
+      }
     } catch (err: unknown) {
       setError(errorMessage(err));
     } finally {
@@ -270,6 +405,7 @@ export default function HomePage() {
           <div className="mt-3 flex flex-wrap gap-2">
             {liveDomains.map((row) => {
               const sourceDisplay = sourceHost(row.domain);
+              const runtime = dominantRuntime(row.activeAgentAddresses, agentRuntimeByAddress);
               return (
                 <Button
                   key={row.domain}
@@ -280,7 +416,7 @@ export default function HomePage() {
                   onClick={() => openPostRequestDialog(`https://${row.domain}`)}
                   disabled={!address || wrongChain}
                 >
-                  <SourceFavicon source={row.domain} className="size-5 rounded-sm" showFallback />
+                  <SourceFavicon source={row.domain} className="size-5 rounded-sm" showFallback runtime={runtime} />
                   <span className="sr-only">{sourceDisplay}</span>
                 </Button>
               );
@@ -362,6 +498,7 @@ export default function HomePage() {
                 const presence = requestDomain ? domainPresenceByDomain[requestDomain] : undefined;
                 const activeAgents = presence?.activeAgents ?? 0;
                 const sourceDisplay = sourceHost(row.sourceURI);
+                const runtime = dominantRuntime(presence?.activeAgentAddresses, agentRuntimeByAddress);
                 return (
                   <TableRow
                     key={row.requestId}
@@ -375,7 +512,7 @@ export default function HomePage() {
                     </TableCell>
                     <TableCell className="max-w-[220px]">
                       <div className="flex min-w-0 items-center gap-2">
-                        <SourceFavicon source={row.sourceURI} className="size-4 shrink-0 rounded-sm" />
+                        <SourceFavicon source={row.sourceURI} className="size-4 shrink-0 rounded-sm" runtime={runtime} />
                         <span className="truncate">{sourceDisplay}</span>
                       </div>
                     </TableCell>
