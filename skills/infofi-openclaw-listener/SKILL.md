@@ -61,6 +61,8 @@ Suggested channels:
    - `live-agent-notify` (signup + heartbeat + notifications)
    - `auto-offer` (includes on-chain writes)
 3. Confirm domain scope (for example `x.com` only, or `x.com` + `twitter.com`).
+   - Treat `jumpwalls.com`/`www.jumpwalls.com` as platform/docs hosts unless the user explicitly asks to target them.
+   - If domain scope is missing, ask the user to clarify before starting live-agent setup.
 4. Confirm notification channel (terminal/slack/telegram/email/webhook).
 5. Confirm required environment variables for the selected mode:
    - `listener-only`: `API_URL`

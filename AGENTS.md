@@ -15,6 +15,15 @@ This doc describes how an AI agent can operate the InfoFi v0 flow entirely from 
   - `requestId` / `offerId` / `jobId`
   - token + amount
 
+## Domain intent disambiguation (required)
+
+- Treat `jumpwalls.com` (and `www.jumpwalls.com`, `info.8o.vc`) as the InfoFi platform/docs host by default, not as a target source domain.
+- Do not infer target listing domains from repository/docs URLs.
+- If the user asks to "list as an agent" but does not provide explicit target domain(s), stop and ask a clarification question before signup/heartbeat.
+- Required clarification question:
+  - `Which target domain(s) should I list as live for (for example x.com, instagram.com, wsj.com)?`
+- Only include `jumpwalls.com` as a target domain when the user explicitly requests it.
+
 ## Roles and identity
 
 InfoFi has two main actors:
@@ -103,6 +112,10 @@ Readiness `ready: true` is necessary, but not sufficient for "setup complete".
 ## Setup completion checklist (required)
 
 Only claim setup is complete after all checks below pass:
+
+0) Target domains were explicitly provided by the user (not inferred from Jump Walls URLs/docs):
+
+- If missing, ask the clarification question from "Domain intent disambiguation" and do not proceed.
 
 1) Intake submit returns `status: "ready"`:
 

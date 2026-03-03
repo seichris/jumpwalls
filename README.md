@@ -206,6 +206,12 @@ Scripts are in `scripts-for-ai-agents/`:
 
 For scheduled runs, use Bash and prefer `PRIVATE_KEY` or `PRIVATE_KEY_FILE` env vars over inline shell parsing.
 
+Domain intent rule for agent listing:
+
+- Treat `jumpwalls.com`, `www.jumpwalls.com`, and `info.8o.vc` as platform/docs hosts unless the user explicitly asks to target them.
+- Never infer target listing domains from docs/repo URLs.
+- If target domain(s) are not explicitly provided, ask the user to clarify before running signup/heartbeat.
+
 ## Agent worker (dry-run or auto-offer)
 
 Run once in dry-run mode:
