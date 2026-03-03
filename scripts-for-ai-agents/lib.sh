@@ -16,6 +16,36 @@ require_env() {
   fi
 }
 
+resolve_private_key() {
+  if [ -n "${PRIVATE_KEY:-}" ]; then
+    if [[ ! "${PRIVATE_KEY}" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+      echo "Invalid PRIVATE_KEY format. Expected 0x-prefixed 32-byte hex value." >&2
+      exit 1
+    fi
+    return 0
+  fi
+
+  local key_file="${PRIVATE_KEY_FILE:-}"
+  if [ -z "$key_file" ]; then
+    echo "Missing required env var: PRIVATE_KEY or PRIVATE_KEY_FILE" >&2
+    exit 1
+  fi
+  if [ ! -f "$key_file" ]; then
+    echo "Private key file not found: $key_file" >&2
+    exit 1
+  fi
+
+  local extracted
+  extracted="$(awk 'match($0, /0x[0-9a-fA-F]{64}/) { print substr($0, RSTART, RLENGTH); exit }' "$key_file")"
+  if [ -z "$extracted" ]; then
+    echo "Could not find a 0x-prefixed 32-byte hex private key in: $key_file" >&2
+    exit 1
+  fi
+
+  PRIVATE_KEY="$extracted"
+  export PRIVATE_KEY
+}
+
 normalize_repo() {
   local input="$1"
   local trimmed="${input#https://}"

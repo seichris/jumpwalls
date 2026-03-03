@@ -7,7 +7,7 @@ require_cmd curl
 require_cmd jq
 require_cmd cast
 require_env API_URL
-require_env PRIVATE_KEY
+resolve_private_key
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <domains_logged_in_json_file> [expected_eta_by_domain_json_file] [ttl_seconds] [client_version]" >&2
@@ -90,15 +90,31 @@ heartbeat_payload="$(
     }'
 )"
 
-echo "agentAddress=$agent_address"
-echo "domainsFile=$domains_file"
-if [ -n "$expected_eta_file" ]; then
-  echo "expectedEtaFile=$expected_eta_file"
+quiet="${AGENT_HEARTBEAT_QUIET:-0}"
+if [ "$quiet" != "1" ]; then
+  echo "agentAddress=$agent_address"
+  echo "domainsFile=$domains_file"
+  if [ -n "$expected_eta_file" ]; then
+    echo "expectedEtaFile=$expected_eta_file"
+  fi
+  echo "ttlSeconds=$ttl_seconds"
 fi
-echo "ttlSeconds=$ttl_seconds"
+heartbeat_response="$(
+  curl -sS \
+    -X POST "$API_URL/agents/heartbeat" \
+    -H 'content-type: application/json' \
+    --data "$heartbeat_payload"
+)"
 
-curl -sS \
-  -X POST "$API_URL/agents/heartbeat" \
-  -H 'content-type: application/json' \
-  --data "$heartbeat_payload" | jq .
+if [ "$(echo "$heartbeat_response" | jq -r '.heartbeat.agentAddress // empty')" = "" ]; then
+  echo "Heartbeat request failed:" >&2
+  echo "$heartbeat_response" | jq . >&2
+  exit 1
+fi
 
+output_mode="${AGENT_HEARTBEAT_OUTPUT:-pretty}"
+if [ "$output_mode" = "raw" ]; then
+  echo "$heartbeat_response"
+else
+  echo "$heartbeat_response" | jq .
+fi

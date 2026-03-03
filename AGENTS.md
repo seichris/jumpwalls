@@ -26,11 +26,12 @@ Each action is authorized purely by the EVM account that signs the transaction (
 
 ## Prerequisites
 
-- Tools: `cast`, `curl`, `jq`
+- Tools: `bash`, `cast`, `curl`, `jq`
 - Env (per network):
   - `API_URL` (where `POST /digests` is served; also used by `01_health.sh`)
   - `RPC_URL`, `CHAIN_ID`, `CONTRACT_ADDRESS`
   - `PRIVATE_KEY` (the actor’s key: requester or consultant)
+  - Optional: `PRIVATE_KEY_FILE` (if set, scripts extract the first `0x...` 32-byte key)
  - API deployment must be configured for InfoFi: `CONTRACT_KIND=infofi`
 
 Tip: use `scripts-for-ai-agents/env.mainnet.example.sh` and `scripts-for-ai-agents/env.sepolia.example.sh` as templates.
@@ -40,6 +41,19 @@ Sanity checks:
 ```bash
 ./scripts-for-ai-agents/01_health.sh
 curl -sS "$API_URL/contract" | jq .
+```
+
+## Shell and secret handling (cron-safe)
+
+- Run scripts with Bash (`#!/usr/bin/env bash`). Do not assume `/bin/sh` supports Bash flags like `set -o pipefail`.
+- Do not inline fragile secret parsing in scheduler commands. Prefer setting `PRIVATE_KEY` directly, or `PRIVATE_KEY_FILE` and letting scripts extract the key.
+- Use a wrapper script for scheduled heartbeats instead of long inline cron commands.
+
+Example cron (every 2 minutes, TTL 180s):
+
+```bash
+SHELL=/bin/bash
+*/2 * * * * cd /path/to/infoFi && API_URL=https://... PRIVATE_KEY_FILE=/secure/key.txt ./scripts-for-ai-agents/21_live_heartbeat_job.sh ./domains.json ./eta.json 180 agent-cron-v1 .agent-heartbeat-status.json >> ./agent-heartbeat.log 2>&1
 ```
 
 ## Deterministic setup and readiness endpoints
@@ -84,7 +98,58 @@ curl -sS -X POST "$API_URL/agents/setup/submit" \
 curl -sS "$API_URL/agents/<agent_address>/readiness?domains=x.com,twitter.com" | jq .
 ```
 
-Only treat setup as complete when readiness returns `ready: true`.
+Readiness `ready: true` is necessary, but not sufficient for "setup complete".
+
+## Setup completion checklist (required)
+
+Only claim setup is complete after all checks below pass:
+
+1) Intake submit returns `status: "ready"`:
+
+```bash
+curl -sS -X POST "$API_URL/agents/setup/submit" \
+  -H 'content-type: application/json' \
+  --data '{...}' | jq .
+```
+
+2) Readiness returns `ready: true` for requested domains:
+
+```bash
+curl -sS "$API_URL/agents/<agent_address>/readiness?domains=x.com,twitter.com" | jq .
+```
+
+3) At least one scheduled heartbeat run succeeds (same command cron uses):
+
+```bash
+./scripts-for-ai-agents/21_live_heartbeat_job.sh \
+  ./domains.json \
+  ./eta.json \
+  180 \
+  agent-cron-v1 \
+  .agent-heartbeat-status.json
+```
+
+4) Verification script passes (readiness + active heartbeat + scheduler success evidence):
+
+```bash
+./scripts-for-ai-agents/22_verify_live_setup.sh \
+  <agent_address> \
+  x.com,twitter.com \
+  .agent-heartbeat-status.json
+```
+
+## Proof lines to include in "done" replies
+
+At minimum, include these fields (from script output):
+
+- `proof.setup.ready=true`
+- `proof.chain.chainId=...`
+- `proof.chain.contractAddress=...`
+- `proof.agent.address=...`
+- `proof.heartbeat.lastSeenAt=...`
+- `proof.heartbeat.expiresAt=...`
+- `proof.scheduler.lastSuccessAt=...`
+- `proof.scheduler.statusFile=...`
 
 ## Chrome extension handoff (agent requirement)
 
@@ -228,6 +293,12 @@ Send live availability heartbeat (`domains_logged_in`, optional ETA map):
 ./scripts-for-ai-agents/16_agent_heartbeat.sh <domains_logged_in_json_file> [expected_eta_by_domain_json_file] [ttl_seconds] [client_version]
 ```
 
+Scheduled heartbeat wrapper (recommended for cron):
+
+```bash
+./scripts-for-ai-agents/21_live_heartbeat_job.sh <domains_logged_in_json_file> [expected_eta_by_domain_json_file] [ttl_seconds] [client_version] [status_file]
+```
+
 8) Presence telemetry and demand signals
 
 Decision logging:
@@ -269,3 +340,9 @@ API_URL=http://localhost:8787 PRIVATE_KEY=0x... AGENT_MODE=auto-offer CHAIN_ID=8
 ```
 
 The worker also checks hired jobs for the consultant and can auto-deliver digest content (`POST /digests` + `deliverDigest`) when `AGENT_AUTO_DELIVER_ENABLED=true`.
+
+10) Live setup verification (proof-oriented)
+
+```bash
+./scripts-for-ai-agents/22_verify_live_setup.sh <agent_address> <domains_csv> [status_file]
+```

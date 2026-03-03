@@ -7,7 +7,7 @@ require_cmd curl
 require_cmd jq
 require_cmd cast
 require_env API_URL
-require_env PRIVATE_KEY
+resolve_private_key
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <capabilities_json_file> [display_name] [status_ACTIVE_or_PAUSED]" >&2
@@ -85,4 +85,3 @@ curl -sS \
   -X POST "$API_URL/agents/signup" \
   -H 'content-type: application/json' \
   --data "$signup_payload" | jq .
-

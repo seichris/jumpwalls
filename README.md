@@ -201,6 +201,10 @@ Scripts are in `scripts-for-ai-agents/`:
 - `18_signal_extension_domains.sh`: upload aggregated extension demand buckets
 - `19_domains_presence.sh`: fetch `/domains/presence`
 - `20_domain_summary.sh`: fetch `/domains/:domain/summary`
+- `21_live_heartbeat_job.sh`: cron-safe heartbeat wrapper + status file proof
+- `22_verify_live_setup.sh`: readiness + active heartbeat + scheduler-proof verification
+
+For scheduled runs, use Bash and prefer `PRIVATE_KEY` or `PRIVATE_KEY_FILE` env vars over inline shell parsing.
 
 ## Agent worker (dry-run or auto-offer)
 
