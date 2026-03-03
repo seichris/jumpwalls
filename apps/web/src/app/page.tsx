@@ -36,10 +36,13 @@ function sourceHost(url: string) {
   }
 }
 
-function sourceFaviconUrl(url: string) {
+function sourceFaviconUrls(url: string) {
   const domain = normalizeDomain(url);
-  if (!domain) return null;
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
+  if (!domain) return [];
+  return [
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`,
+    `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`,
+  ];
 }
 
 function normalizeDomain(input: string) {
@@ -65,6 +68,47 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
   if (upper === "HIRED") return "warning";
   if (upper === "CLOSED") return "default";
   return "secondary";
+}
+
+function SourceFavicon({
+  source,
+  className,
+  showFallback = false,
+}: {
+  source: string;
+  className: string;
+  showFallback?: boolean;
+}) {
+  const urls = React.useMemo(() => sourceFaviconUrls(source), [source]);
+  const [index, setIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    setIndex(0);
+  }, [source]);
+
+  if (urls.length === 0 || index >= urls.length) {
+    return showFallback ? <span className="text-[10px]">?</span> : null;
+  }
+
+  return (
+    <img
+      src={urls[index]}
+      alt=""
+      className={className}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onLoad={(event) => {
+        if (index !== 0) return;
+        if (event.currentTarget.naturalWidth <= 16 && event.currentTarget.naturalHeight <= 16) {
+          setIndex((current) => current + 1);
+        }
+      }}
+      onError={() => {
+        setIndex((current) => current + 1);
+      }}
+    />
+  );
 }
 
 export default function HomePage() {
@@ -201,7 +245,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="mb-4 rounded-lg border px-4 py-3">
+      <section className="mb-4 rounded-lg">
         <p className="text-sm">
           This is a platform for humans and AI agents to request paywalled content and earn bounties delivering it.
         </p>
@@ -226,7 +270,6 @@ export default function HomePage() {
           <div className="mt-3 flex flex-wrap gap-2">
             {liveDomains.map((row) => {
               const sourceDisplay = sourceHost(row.domain);
-              const sourceFavicon = sourceFaviconUrl(row.domain);
               return (
                 <Button
                   key={row.domain}
@@ -237,21 +280,7 @@ export default function HomePage() {
                   onClick={() => openPostRequestDialog(`https://${row.domain}`)}
                   disabled={!address || wrongChain}
                 >
-                  {sourceFavicon ? (
-                    <img
-                      src={sourceFavicon}
-                      alt=""
-                      className="size-5 rounded-sm"
-                      loading="lazy"
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                      onError={(event) => {
-                        event.currentTarget.style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    <span className="text-[10px]">?</span>
-                  )}
+                  <SourceFavicon source={row.domain} className="size-5 rounded-sm" showFallback />
                   <span className="sr-only">{sourceDisplay}</span>
                 </Button>
               );
@@ -333,7 +362,6 @@ export default function HomePage() {
                 const presence = requestDomain ? domainPresenceByDomain[requestDomain] : undefined;
                 const activeAgents = presence?.activeAgents ?? 0;
                 const sourceDisplay = sourceHost(row.sourceURI);
-                const sourceFavicon = sourceFaviconUrl(row.sourceURI);
                 return (
                   <TableRow
                     key={row.requestId}
@@ -347,19 +375,7 @@ export default function HomePage() {
                     </TableCell>
                     <TableCell className="max-w-[220px]">
                       <div className="flex min-w-0 items-center gap-2">
-                        {sourceFavicon ? (
-                          <img
-                            src={sourceFavicon}
-                            alt=""
-                            className="size-4 shrink-0 rounded-sm"
-                            loading="lazy"
-                            decoding="async"
-                            referrerPolicy="no-referrer"
-                            onError={(event) => {
-                              event.currentTarget.style.display = "none";
-                            }}
-                          />
-                        ) : null}
+                        <SourceFavicon source={row.sourceURI} className="size-4 shrink-0 rounded-sm" />
                         <span className="truncate">{sourceDisplay}</span>
                       </div>
                     </TableCell>
