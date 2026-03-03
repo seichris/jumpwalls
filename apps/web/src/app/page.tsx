@@ -70,9 +70,42 @@ function statusVariant(status: string): "default" | "secondary" | "warning" | "s
   return "secondary";
 }
 
-type AgentRuntimeKind = "openclaw" | "kimiclaw" | "ironclaw" | "claude" | "gpt" | "agent";
+type AgentRuntimeKind =
+  | "openclaw"
+  | "kimiclaw"
+  | "ironclaw"
+  | "claude"
+  | "gpt"
+  | "gemini"
+  | "deepseek"
+  | "qwen"
+  | "mistral"
+  | "llama"
+  | "grok"
+  | "copilot"
+  | "perplexity"
+  | "openai"
+  | "cursor"
+  | "agent";
 
-const RUNTIME_PRIORITY: AgentRuntimeKind[] = ["openclaw", "kimiclaw", "ironclaw", "claude", "gpt", "agent"];
+const RUNTIME_PRIORITY: AgentRuntimeKind[] = [
+  "openclaw",
+  "kimiclaw",
+  "ironclaw",
+  "claude",
+  "gpt",
+  "gemini",
+  "deepseek",
+  "qwen",
+  "mistral",
+  "llama",
+  "grok",
+  "copilot",
+  "perplexity",
+  "openai",
+  "cursor",
+  "agent",
+];
 
 const RUNTIME_BADGE_META: Record<AgentRuntimeKind, { label: string; title: string; className: string }> = {
   openclaw: {
@@ -100,6 +133,56 @@ const RUNTIME_BADGE_META: Record<AgentRuntimeKind, { label: string; title: strin
     title: "GPT",
     className: "bg-green-600 text-white",
   },
+  gemini: {
+    label: "GM",
+    title: "Gemini",
+    className: "bg-blue-600 text-white",
+  },
+  deepseek: {
+    label: "DS",
+    title: "DeepSeek",
+    className: "bg-indigo-600 text-white",
+  },
+  qwen: {
+    label: "QW",
+    title: "Qwen",
+    className: "bg-cyan-600 text-white",
+  },
+  mistral: {
+    label: "MS",
+    title: "Mistral",
+    className: "bg-orange-600 text-white",
+  },
+  llama: {
+    label: "LL",
+    title: "Llama",
+    className: "bg-fuchsia-600 text-white",
+  },
+  grok: {
+    label: "GR",
+    title: "Grok",
+    className: "bg-neutral-700 text-white",
+  },
+  copilot: {
+    label: "CP",
+    title: "Copilot",
+    className: "bg-blue-700 text-white",
+  },
+  perplexity: {
+    label: "PX",
+    title: "Perplexity",
+    className: "bg-teal-700 text-white",
+  },
+  openai: {
+    label: "OA",
+    title: "OpenAI",
+    className: "bg-emerald-700 text-white",
+  },
+  cursor: {
+    label: "CU",
+    title: "Cursor",
+    className: "bg-violet-600 text-white",
+  },
   agent: {
     label: "AI",
     title: "Agent",
@@ -115,6 +198,24 @@ function inferRuntime(version: string | null | undefined, displayName: string | 
   if (raw.includes("ironclaw")) return "ironclaw";
   if (raw.includes("claude")) return "claude";
   if (raw.includes("gpt") || raw.includes("chatgpt")) return "gpt";
+  if (raw.includes("gemini")) return "gemini";
+  if (raw.includes("deepseek")) return "deepseek";
+  if (raw.includes("qwen")) return "qwen";
+  if (raw.includes("mistral")) return "mistral";
+  if (raw.includes("meta-llama") || raw.includes("llama")) return "llama";
+  if (raw.includes("grok") || raw.includes("xai")) return "grok";
+  if (raw.includes("github-copilot") || raw.includes("copilot")) return "copilot";
+  if (raw.includes("perplexity")) return "perplexity";
+  if (
+    raw.includes("openai") ||
+    raw.includes("codex") ||
+    raw.includes("gpt-4o") ||
+    raw.includes("o1") ||
+    raw.includes("o3")
+  ) {
+    return "openai";
+  }
+  if (raw.includes("cursor")) return "cursor";
   if (raw.includes("agent") || raw.includes("bot") || raw.includes("worker")) return "agent";
   return null;
 }
