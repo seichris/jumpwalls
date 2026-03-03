@@ -566,12 +566,12 @@ export default function HomePage() {
                 <button
                   type="button"
                   key={row.domain}
-                  className="inline-flex size-9 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                  className="inline-flex size-6 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                   title={sourceDisplay}
                   onClick={() => openPostRequestDialog(`https://${row.domain}`)}
                   disabled={!address || wrongChain}
                 >
-                  <SourceFavicon source={row.domain} className="size-9 rounded-sm" showFallback runtime={runtime} />
+                  <SourceFavicon source={row.domain} className="size-6 rounded-sm" showFallback runtime={runtime} />
                   <span className="sr-only">{sourceDisplay}</span>
                 </button>
               );
@@ -688,7 +688,7 @@ export default function HomePage() {
                               return (
                                 <span
                                   key={agentAddress}
-                                  className="inline-flex size-5 items-center justify-center"
+                                  className="inline-flex size-4 items-center justify-center"
                                 >
                                   <RuntimeFavicon runtime={runtime} className="size-full rounded-full" title={title} />
                                 </span>
