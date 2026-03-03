@@ -558,7 +558,7 @@ export default function HomePage() {
         ) : liveDomains.length === 0 ? (
           <p className="mt-3 text-xs text-muted-foreground">No offer-ready agents online right now.</p>
         ) : (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-3">
             {liveDomains.map((row) => {
               const sourceDisplay = sourceHost(row.domain);
               const runtime = dominantRuntime(row.activeAgentAddresses, agentRuntimeByAddress);
