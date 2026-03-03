@@ -107,88 +107,151 @@ const RUNTIME_PRIORITY: AgentRuntimeKind[] = [
   "agent",
 ];
 
-const RUNTIME_BADGE_META: Record<AgentRuntimeKind, { label: string; title: string; className: string }> = {
+const RUNTIME_BADGE_META: Record<AgentRuntimeKind, { label: string; title: string }> = {
   openclaw: {
     label: "OC",
     title: "OpenClaw",
-    className: "bg-sky-600 text-white",
   },
   kimiclaw: {
     label: "KC",
     title: "KimiClaw",
-    className: "bg-emerald-600 text-white",
   },
   ironclaw: {
     label: "IC",
     title: "IronClaw",
-    className: "bg-zinc-700 text-white",
   },
   claude: {
     label: "CL",
     title: "Claude",
-    className: "bg-amber-600 text-white",
   },
   gpt: {
     label: "GPT",
     title: "GPT",
-    className: "bg-green-600 text-white",
   },
   gemini: {
     label: "GM",
     title: "Gemini",
-    className: "bg-blue-600 text-white",
   },
   deepseek: {
     label: "DS",
     title: "DeepSeek",
-    className: "bg-indigo-600 text-white",
   },
   qwen: {
     label: "QW",
     title: "Qwen",
-    className: "bg-cyan-600 text-white",
   },
   mistral: {
     label: "MS",
     title: "Mistral",
-    className: "bg-orange-600 text-white",
   },
   llama: {
     label: "LL",
     title: "Llama",
-    className: "bg-fuchsia-600 text-white",
   },
   grok: {
     label: "GR",
     title: "Grok",
-    className: "bg-neutral-700 text-white",
   },
   copilot: {
     label: "CP",
     title: "Copilot",
-    className: "bg-blue-700 text-white",
   },
   perplexity: {
     label: "PX",
     title: "Perplexity",
-    className: "bg-teal-700 text-white",
   },
   openai: {
     label: "OA",
     title: "OpenAI",
-    className: "bg-emerald-700 text-white",
   },
   cursor: {
     label: "CU",
     title: "Cursor",
-    className: "bg-violet-600 text-white",
   },
   agent: {
     label: "AI",
     title: "Agent",
-    className: "bg-slate-600 text-white",
   },
 };
+
+const RUNTIME_ICON_DOMAINS: Record<AgentRuntimeKind, string[]> = {
+  openclaw: ["openclaw.ai"],
+  kimiclaw: ["kimi.ai"],
+  ironclaw: ["ironclaw.ai"],
+  claude: ["claude.ai"],
+  gpt: ["chatgpt.com", "openai.com"],
+  gemini: ["gemini.google.com"],
+  deepseek: ["chat.deepseek.com", "deepseek.com"],
+  qwen: ["chat.qwen.ai", "qwen.ai"],
+  mistral: ["chat.mistral.ai", "mistral.ai"],
+  llama: ["ai.meta.com", "meta.ai"],
+  grok: ["grok.com", "x.ai"],
+  copilot: ["github.com", "copilot.microsoft.com"],
+  perplexity: ["perplexity.ai"],
+  openai: ["openai.com"],
+  cursor: ["cursor.com"],
+  agent: [],
+};
+
+function runtimeFaviconUrls(runtime: AgentRuntimeKind): string[] {
+  const domains = RUNTIME_ICON_DOMAINS[runtime] ?? [];
+  const urls: string[] = [];
+  for (const domain of domains) {
+    urls.push(`https://${domain}/favicon.ico`);
+    urls.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`);
+    urls.push(`https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`);
+  }
+  return Array.from(new Set(urls));
+}
+
+function RuntimeFavicon({
+  runtime,
+  className,
+  title,
+}: {
+  runtime: AgentRuntimeKind | null | undefined;
+  className: string;
+  title?: string;
+}) {
+  const resolvedRuntime = runtime ?? "agent";
+  const urls = React.useMemo(() => runtimeFaviconUrls(resolvedRuntime), [resolvedRuntime]);
+  const [index, setIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    setIndex(0);
+  }, [resolvedRuntime]);
+
+  const meta = RUNTIME_BADGE_META[resolvedRuntime];
+  const ariaTitle = title || meta.title;
+
+  if (urls.length === 0 || index >= urls.length) {
+    return (
+      <span
+        title={ariaTitle}
+        aria-label={ariaTitle}
+        className={`inline-flex items-center justify-center rounded-full bg-muted text-[8px] font-semibold leading-none text-muted-foreground ${className}`}
+      >
+        {meta.label}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={urls[index]}
+      alt=""
+      title={ariaTitle}
+      aria-label={ariaTitle}
+      className={className}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => {
+        setIndex((current) => current + 1);
+      }}
+    />
+  );
+}
 
 function inferRuntime(version: string | null | undefined, displayName: string | null | undefined): AgentRuntimeKind | null {
   const raw = `${version ?? ""} ${displayName ?? ""}`.trim().toLowerCase();
@@ -258,24 +321,20 @@ function SourceFavicon({
 }) {
   const urls = React.useMemo(() => sourceFaviconUrls(source), [source]);
   const [index, setIndex] = React.useState(0);
-  const runtimeBadge = runtime ? RUNTIME_BADGE_META[runtime] : null;
+  const runtimeBadgeTitle = runtime ? RUNTIME_BADGE_META[runtime].title : null;
 
   React.useEffect(() => {
     setIndex(0);
   }, [source]);
 
   if (urls.length === 0 || index >= urls.length) {
-    if (!showFallback && !runtimeBadge) return null;
+    if (!showFallback && !runtime) return null;
     return (
       <span className="relative inline-flex">
         {showFallback ? <span className="text-[10px]">?</span> : null}
-        {runtimeBadge ? (
-          <span
-            title={runtimeBadge.title}
-            aria-label={runtimeBadge.title}
-            className={`absolute -bottom-1 -right-1 inline-flex min-w-3 items-center justify-center rounded-full border border-background px-1 text-[8px] font-semibold leading-none ${runtimeBadge.className}`}
-          >
-            {runtimeBadge.label}
+        {runtime ? (
+          <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-background bg-background p-[1px]">
+            <RuntimeFavicon runtime={runtime} className="size-full rounded-full" title={runtimeBadgeTitle || undefined} />
           </span>
         ) : null}
       </span>
@@ -301,13 +360,9 @@ function SourceFavicon({
           setIndex((current) => current + 1);
         }}
       />
-      {runtimeBadge ? (
-        <span
-          title={runtimeBadge.title}
-          aria-label={runtimeBadge.title}
-          className={`absolute -bottom-1 -right-1 inline-flex min-w-3 items-center justify-center rounded-full border border-background px-1 text-[8px] font-semibold leading-none ${runtimeBadge.className}`}
-        >
-          {runtimeBadge.label}
+      {runtime ? (
+        <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-background bg-background p-[1px]">
+          <RuntimeFavicon runtime={runtime} className="size-full rounded-full" title={runtimeBadgeTitle || undefined} />
         </span>
       ) : null}
     </span>
@@ -598,8 +653,8 @@ export default function HomePage() {
                 const requestDomain = normalizeDomain(row.sourceURI);
                 const presence = requestDomain ? domainPresenceByDomain[requestDomain] : undefined;
                 const activeAgents = presence?.activeAgents ?? 0;
+                const activeAgentAddresses = presence?.activeAgentAddresses ?? [];
                 const sourceDisplay = sourceHost(row.sourceURI);
-                const runtime = dominantRuntime(presence?.activeAgentAddresses, agentRuntimeByAddress);
                 return (
                   <TableRow
                     key={row.requestId}
@@ -613,7 +668,7 @@ export default function HomePage() {
                     </TableCell>
                     <TableCell className="max-w-[220px]">
                       <div className="flex min-w-0 items-center gap-2">
-                        <SourceFavicon source={row.sourceURI} className="size-4 shrink-0 rounded-sm" runtime={runtime} />
+                        <SourceFavicon source={row.sourceURI} className="size-4 shrink-0 rounded-sm" />
                         <span className="truncate">{sourceDisplay}</span>
                       </div>
                     </TableCell>
@@ -622,7 +677,33 @@ export default function HomePage() {
                     <TableCell className="text-right font-mono text-xs">
                       {formatAmount(row.paymentToken, row.maxAmountWei)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs">{activeAgents > 0 ? activeAgents : "—"}</TableCell>
+                    <TableCell className="text-right">
+                      {activeAgents > 0 ? (
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <span className="font-mono text-xs">{activeAgents}</span>
+                          <span className="inline-flex items-center -space-x-1">
+                            {activeAgentAddresses.slice(0, 4).map((agentAddress) => {
+                              const normalizedAgentAddress = agentAddress.toLowerCase();
+                              const runtime = agentRuntimeByAddress[normalizedAgentAddress] ?? null;
+                              const title = `${runtime ? RUNTIME_BADGE_META[runtime].title : "Agent"} ${shortHash(agentAddress)}`;
+                              return (
+                                <span
+                                  key={agentAddress}
+                                  className="inline-flex size-4 items-center justify-center rounded-full border border-background bg-background p-[1px]"
+                                >
+                                  <RuntimeFavicon runtime={runtime} className="size-full rounded-full" title={title} />
+                                </span>
+                              );
+                            })}
+                          </span>
+                          {activeAgentAddresses.length > 4 ? (
+                            <span className="text-[10px] text-muted-foreground">+{activeAgentAddresses.length - 4}</span>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="font-mono text-xs">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right text-xs">{etaMinutesLabel(presence?.medianExpectedEtaSeconds ?? null)}</TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
