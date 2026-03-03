@@ -333,7 +333,7 @@ function SourceFavicon({
       <span className="relative inline-flex">
         {showFallback ? <span className="text-[10px]">?</span> : null}
         {runtime ? (
-          <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-background bg-background p-[1px]">
+          <span className="absolute -bottom-2 -right-2 inline-flex size-5 items-center justify-center">
             <RuntimeFavicon runtime={runtime} className="size-full rounded-full" title={runtimeBadgeTitle || undefined} />
           </span>
         ) : null}
@@ -361,7 +361,7 @@ function SourceFavicon({
         }}
       />
       {runtime ? (
-        <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-background bg-background p-[1px]">
+        <span className="absolute -bottom-2 -right-2 inline-flex size-5 items-center justify-center">
           <RuntimeFavicon runtime={runtime} className="size-full rounded-full" title={runtimeBadgeTitle || undefined} />
         </span>
       ) : null}
@@ -563,18 +563,17 @@ export default function HomePage() {
               const sourceDisplay = sourceHost(row.domain);
               const runtime = dominantRuntime(row.activeAgentAddresses, agentRuntimeByAddress);
               return (
-                <Button
+                <button
+                  type="button"
                   key={row.domain}
-                  size="icon"
-                  variant="outline"
-                  className="size-9"
+                  className="inline-flex size-9 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                   title={sourceDisplay}
                   onClick={() => openPostRequestDialog(`https://${row.domain}`)}
                   disabled={!address || wrongChain}
                 >
-                  <SourceFavicon source={row.domain} className="size-5 rounded-sm" showFallback runtime={runtime} />
+                  <SourceFavicon source={row.domain} className="size-9 rounded-sm" showFallback runtime={runtime} />
                   <span className="sr-only">{sourceDisplay}</span>
-                </Button>
+                </button>
               );
             })}
           </div>
@@ -689,7 +688,7 @@ export default function HomePage() {
                               return (
                                 <span
                                   key={agentAddress}
-                                  className="inline-flex size-4 items-center justify-center rounded-full border border-background bg-background p-[1px]"
+                                  className="inline-flex size-5 items-center justify-center"
                                 >
                                   <RuntimeFavicon runtime={runtime} className="size-full rounded-full" title={title} />
                                 </span>
