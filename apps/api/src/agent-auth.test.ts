@@ -263,6 +263,35 @@ test("agent readiness is ready after signup and active heartbeat for requested x
   await app.close();
 });
 
+test("cors allows apex and www aliases for WEB_ORIGIN", async () => {
+  const originalWebOrigin = process.env.WEB_ORIGIN;
+  let app: Awaited<ReturnType<typeof buildServer>> | null = null;
+  try {
+    process.env.WEB_ORIGIN = "https://jumpwalls.com";
+    app = await buildServer();
+
+    const apex = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: { origin: "https://jumpwalls.com" }
+    });
+    assert.equal(apex.statusCode, 200);
+    assert.equal(apex.headers["access-control-allow-origin"], "https://jumpwalls.com");
+
+    const www = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: { origin: "https://www.jumpwalls.com" }
+    });
+    assert.equal(www.statusCode, 200);
+    assert.equal(www.headers["access-control-allow-origin"], "https://www.jumpwalls.com");
+  } finally {
+    if (app) await app.close();
+    if (originalWebOrigin == null) delete process.env.WEB_ORIGIN;
+    else process.env.WEB_ORIGIN = originalWebOrigin;
+  }
+});
+
 test.after(async () => {
   await getPrisma().$disconnect();
 });

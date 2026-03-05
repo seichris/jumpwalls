@@ -233,6 +233,61 @@ export async function buildServer() {
     });
   }
 
+  function normalizeAllowedOrigin(raw: string) {
+    const value = raw.trim();
+    if (!value) return "";
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+      return parsed.origin;
+    } catch {
+      return "";
+    }
+  }
+
+  function isIpLikeHost(hostname: string) {
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return true;
+    return hostname.includes(":");
+  }
+
+  function expandWwwOriginAliases(origin: string) {
+    try {
+      const parsed = new URL(origin);
+      if (parsed.protocol !== "https:") return [] as string[];
+      const host = parsed.hostname.toLowerCase();
+      if (!host || host === "localhost" || isIpLikeHost(host)) return [] as string[];
+      if (host.startsWith("www.")) {
+        const withoutWww = host.slice(4);
+        if (!withoutWww || !withoutWww.includes(".")) return [] as string[];
+        const alias = new URL(origin);
+        alias.hostname = withoutWww;
+        return [alias.origin];
+      }
+      // Only auto-add `www.` for likely apex domains (e.g. jumpwalls.com).
+      const labels = host.split(".").filter(Boolean);
+      if (labels.length !== 2) return [] as string[];
+      const alias = new URL(origin);
+      alias.hostname = `www.${host}`;
+      return [alias.origin];
+    } catch {
+      return [] as string[];
+    }
+  }
+
+  function buildAllowedOrigins(raw: string) {
+    const configured = raw
+      .split(",")
+      .map((entry) => normalizeAllowedOrigin(entry))
+      .filter(Boolean);
+    const seeds = configured.length > 0 ? configured : ["http://localhost:3000"];
+    const out = new Set<string>();
+    for (const seed of seeds) {
+      out.add(seed);
+      for (const alias of expandWwwOriginAliases(seed)) out.add(alias);
+    }
+    return out;
+  }
+
   function buildAgentChallengeMessage(args: {
     purpose: AgentChallengePurpose;
     agentAddress: string;
@@ -844,14 +899,12 @@ export async function buildServer() {
   }
 
   const webOrigin = process.env.WEB_ORIGIN || "http://localhost:3000";
-  const webOrigins = webOrigin
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  const allowedOrigins = new Set(webOrigins.length > 0 ? webOrigins : ["http://localhost:3000"]);
+  const allowedOrigins = buildAllowedOrigins(webOrigin);
   const corsOrigin: FastifyCorsOptions["origin"] = async (origin?: string) => {
     if (!origin) return false;
-    return allowedOrigins.has(origin) ? origin : false;
+    const normalized = normalizeAllowedOrigin(origin);
+    if (!normalized) return false;
+    return allowedOrigins.has(normalized) ? normalized : false;
   };
   await app.register(cors, { origin: corsOrigin, credentials: true });
 
