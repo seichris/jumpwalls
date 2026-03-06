@@ -117,15 +117,28 @@ export function UserRailProvider({ children }: { children: React.ReactNode }) {
 
     const challenge = await createUserAuthChallenge(sessionAddress);
     const signature = await signEvmMessage(sessionAddress, challenge.messageToSign, provider);
-    await verifyUserAuthChallenge({
+    const session = await verifyUserAuthChallenge({
       address: sessionAddress,
       nonce: challenge.nonce,
       signature,
     });
-    const next = await getUserProfile();
-    setProfileResponse(next);
-    return next.user;
-  }, [authenticatedForCurrentWallet, privyEnabled, profile, sessionAddress]);
+    const next = await getUserProfile().catch(() => null);
+    if (next?.authenticated && next.user?.evmAddress?.toLowerCase() === sessionAddress) {
+      setProfileResponse(next);
+      return next.user;
+    }
+
+    const fallbackUser = {
+      evmAddress: session.evmAddress?.toLowerCase() || sessionAddress,
+      fastAddress: profile?.fastAddress ?? null,
+      fastPublicKey: profile?.fastPublicKey ?? null,
+      fastBoundAt: profile?.fastBoundAt ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    setProfileResponse({ authenticated: true, user: fallbackUser });
+    void refreshProfile().catch(() => undefined);
+    return fallbackUser;
+  }, [authenticatedForCurrentWallet, privyEnabled, profile, refreshProfile, sessionAddress]);
 
   const bindFastWallet = React.useCallback(async () => {
     if (!sessionAddress) {
