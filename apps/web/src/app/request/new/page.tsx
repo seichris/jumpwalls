@@ -6,13 +6,16 @@ import * as React from "react";
 import type { Address } from "viem";
 import { parseEther, parseUnits } from "viem";
 
-import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
+import { AccountRailControls } from "@/components/infofi/account-rail-controls";
+import { useUserRail } from "@/components/providers/user-rail-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { deriveRequestId, ETH_TOKEN, postRequestTx, randomSalt, usdcForChain } from "@/lib/infofi-contract";
+import { createFastRequest, getFastConfig } from "@/lib/api";
+import { connectFastWallet, transferFast } from "@/lib/fast-wallet";
+import { deriveRequestId, ETH_TOKEN, FAST_SETTLEMENT_TOKEN, parseAmount, postRequestTx, randomSalt, usdcForChain } from "@/lib/infofi-contract";
 import { fullTextRisk, logUiAction, lowBudgetWarning } from "@/lib/infofi-ux";
 import { useWallet } from "@/lib/hooks/useWallet";
 import { isPrivyFeatureEnabled, isPrivyFundingSupportedChain, privyFundingSupportedChainIds } from "@/lib/privy";
@@ -22,6 +25,7 @@ import { canPostRequestWithBalance, formatWalletFundingSummary } from "@/lib/wal
 export default function NewRequestPage() {
   const router = useRouter();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
+  const { activeRail, ensureRail } = useUserRail();
   const {
     address,
     chainId,
@@ -46,15 +50,16 @@ export default function NewRequestPage() {
   } | null>(null);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
+  const postBlockedByChain = activeRail === "BASE" && wrongChain;
   const privyEnabled = isPrivyFeatureEnabled();
   const privyChainSupported = isPrivyFundingSupportedChain(expectedChainId);
   const privySupportedChainsLabel = Array.from(privyFundingSupportedChainIds()).join(", ");
   const usdc = usdcForChain();
-  const paymentToken = tokenMode === "ETH" ? ETH_TOKEN : usdc || ETH_TOKEN;
+  const paymentToken = activeRail === "FAST" ? FAST_SETTLEMENT_TOKEN : tokenMode === "ETH" ? ETH_TOKEN : usdc || ETH_TOKEN;
   const questionRisk = fullTextRisk(question);
   const budgetWarning = lowBudgetWarning(paymentToken, maxAmount);
 
-  const canSubmit = Boolean(address && sourceURI.trim() && question.trim() && Number(maxAmount) > 0 && !wrongChain);
+  const canSubmit = Boolean(address && sourceURI.trim() && question.trim() && Number(maxAmount) > 0 && !postBlockedByChain);
 
   React.useEffect(() => {
     if (!privyEnabled) return;
@@ -74,7 +79,7 @@ export default function NewRequestPage() {
       setError("Question is required.");
       return;
     }
-    if (!paymentToken) {
+    if (activeRail !== "FAST" && !paymentToken) {
       setError("USDC is not configured for this chain.");
       return;
     }
@@ -82,6 +87,27 @@ export default function NewRequestPage() {
     setSubmitting(true);
     setError(null);
     try {
+      if (activeRail === "FAST") {
+        await ensureRail("FAST");
+        const { wallet, account } = await connectFastWallet();
+        const { treasuryAddress } = await getFastConfig();
+        const fundingCertificate = await transferFast({
+          wallet,
+          account,
+          recipient: treasuryAddress,
+          amount: maxAmount,
+        });
+        const request = await createFastRequest({
+          sourceURI: sourceURI.trim(),
+          question: question.trim(),
+          maxAmountWei: parseAmount(FAST_SETTLEMENT_TOKEN, maxAmount).toString(),
+          fundingCertificate,
+        });
+        logUiAction("post_request_page_fast", { requestId: request.requestId, maxAmount });
+        router.push(`/request/${request.requestId}`);
+        return;
+      }
+
       const salt = saltInput.trim() || randomSalt();
       const maxAmountWei = tokenMode === "ETH" ? parseEther(maxAmount) : parseUnits(maxAmount, 6);
 
@@ -121,7 +147,7 @@ export default function NewRequestPage() {
         </div>
         <div className="flex items-center gap-2">
           {privyEnabled ? (
-            <PrivyConnectWalletButton
+            <AccountRailControls
               expectedChainId={expectedChainId}
               walletAddress={address}
               walletChainId={chainId}
@@ -145,7 +171,7 @@ export default function NewRequestPage() {
             />
           ) : null}
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
-          {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
+          {activeRail === "BASE" && wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
         </div>
       </header>
 
@@ -173,16 +199,20 @@ export default function NewRequestPage() {
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="grid gap-2">
-              <Label>Payment Token</Label>
-              <Select value={tokenMode} onValueChange={(value) => setTokenMode(value as "ETH" | "USDC")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ETH">ETH</SelectItem>
-                  <SelectItem value="USDC">USDC</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>{activeRail === "FAST" ? "Settlement" : "Payment Token"}</Label>
+              {activeRail === "FAST" ? (
+                <Input value={FAST_SETTLEMENT_TOKEN} readOnly />
+              ) : (
+                <Select value={tokenMode} onValueChange={(value) => setTokenMode(value as "ETH" | "USDC")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ETH">ETH</SelectItem>
+                    <SelectItem value="USDC">USDC</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="max-amount">Max Amount</Label>
@@ -190,7 +220,7 @@ export default function NewRequestPage() {
                 id="max-amount"
                 type="number"
                 min="0"
-                step={tokenMode === "ETH" ? "0.000001" : "0.01"}
+                step={activeRail === "FAST" ? "0.01" : tokenMode === "ETH" ? "0.000001" : "0.01"}
                 value={maxAmount}
                 onChange={(event) => setMaxAmount(event.target.value)}
               />
@@ -198,7 +228,9 @@ export default function NewRequestPage() {
           </div>
 
           <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-            Fair-use guardrail: requests are for digests, summaries, and iterative Q&A only. Do not request full-text redistribution.
+            {activeRail === "FAST"
+              ? "FAST mode uses Jumpwalls treasury custody. Requests still must stay within digests, summaries, and iterative Q&A."
+              : "Fair-use guardrail: requests are for digests, summaries, and iterative Q&A only. Do not request full-text redistribution."}
           </div>
           {questionRisk ? (
             <p className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
@@ -216,7 +248,7 @@ export default function NewRequestPage() {
                 <p>Funding flow finished with an error{fundingFeedback.errorCode ? ` (${fundingFeedback.errorCode})` : ""}.</p>
               ) : (
                 <>
-                  <p>
+                    <p>
                     Funding flow {fundingFeedback.status}. On-chain wallet balance: <span className="font-mono">{fundingFeedback.summary}</span>.
                   </p>
                   {fundingFeedback.canPost ? (
@@ -260,7 +292,7 @@ export default function NewRequestPage() {
 
           <div>
             <Button onClick={submit} disabled={!canSubmit || submitting}>
-              {submitting ? "Posting..." : "Post Request"}
+              {submitting ? (activeRail === "FAST" ? "Funding..." : "Posting...") : "Post Request"}
             </Button>
           </div>
         </div>

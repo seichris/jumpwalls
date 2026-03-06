@@ -3,14 +3,17 @@
 import * as React from "react";
 import type { Address, Hex } from "viem";
 
+import { useUserRail } from "@/components/providers/user-rail-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { createFastOffer } from "@/lib/api";
 import {
   assertSupportedToken,
   deriveOfferId,
+  FAST_SETTLEMENT_TOKEN,
   formatAmount,
   isEthToken,
   parseAmount,
@@ -38,6 +41,7 @@ export function PostOfferDialog({
   maxAmountWeiByToken?: Record<string, string>;
   onCreated?: (offerId: Hex) => void;
 }) {
+  const { ensureRail } = useUserRail();
   const tokenOptions = React.useMemo(() => {
     const out: string[] = [];
     const seen = new Set<string>();
@@ -95,6 +99,19 @@ export function PostOfferDialog({
     setSubmitting(true);
     setError(null);
     try {
+      if (request.rail === "FAST") {
+        await ensureRail("FAST");
+        const offer = await createFastOffer({
+          requestId: request.requestId,
+          amountWei: parseAmount(FAST_SETTLEMENT_TOKEN, amount).toString(),
+          etaSeconds: Math.max(60, Math.floor(Number(etaMinutes) * 60)),
+          proofType: proofType.trim() || "reputation-only",
+        });
+        onOpenChange(false);
+        onCreated?.(offer.offerId as Hex);
+        return;
+      }
+
       assertSupportedToken(activeToken);
       const amountWei = parseAmount(activeToken, amount);
       const etaSeconds = Math.max(60, Math.floor(Number(etaMinutes) * 60));
@@ -156,7 +173,7 @@ export function PostOfferDialog({
                 id="offer-amount"
                 type="number"
                 min="0"
-                step={isEthToken(activeToken) ? "0.000001" : "0.01"}
+                step={request.rail === "FAST" ? "0.01" : isEthToken(activeToken) ? "0.000001" : "0.01"}
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
                 placeholder={amountPlaceholder}

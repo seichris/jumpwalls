@@ -132,6 +132,130 @@ model InfoFiDigest {
   @@index([jobId])
 }
 
+model InfoFiUserProfile {
+  id            String    @id @default(cuid())
+  evmAddress    String    @unique
+  fastAddress   String?
+  fastPublicKey String?
+  fastBoundAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([fastAddress])
+}
+
+model InfoFiUserAuthChallenge {
+  id            String   @id @default(cuid())
+  evmAddress    String
+  nonce         String   @unique
+  purpose       String
+  message       String
+  fastAddress   String?
+  fastPublicKey String?
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([evmAddress, purpose, expiresAt])
+}
+
+model InfoFiUserSession {
+  id          String   @id @default(cuid())
+  tokenHash   String   @unique
+  evmAddress  String
+  expiresAt   DateTime
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([evmAddress, expiresAt])
+}
+
+model InfoFiFastRequest {
+  id                   String   @id @default(cuid())
+  requestId            String   @unique
+  requester            String
+  requesterFastAddress String
+  paymentToken         String
+  maxAmountWei         String
+  sourceURI            String
+  question             String
+  status               String
+  hiredOfferId         String?
+  fundingTxHash        String
+  fundingNonce         Int
+  fundingCertificateJson String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([requester, status, updatedAt])
+}
+
+model InfoFiFastOffer {
+  id                    String   @id @default(cuid())
+  offerId               String   @unique
+  requestId             String
+  consultant            String
+  consultantFastAddress String
+  amountWei             String
+  etaSeconds            Int
+  proofType             String
+  status                String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([requestId, status, updatedAt])
+  @@index([consultant, status, updatedAt])
+}
+
+model InfoFiFastJob {
+  id                    String   @id @default(cuid())
+  jobId                 String   @unique
+  requestId             String   @unique
+  offerId               String   @unique
+  requester             String
+  requesterFastAddress  String
+  consultant            String
+  consultantFastAddress String
+  paymentToken          String
+  amountWei             String
+  remainingWei          String
+  digestHash            String?
+  metadataURI           String?
+  proofTypeOrURI        String?
+  status                String
+  hiredAt               DateTime
+  deliveredAt           DateTime?
+  closedAt              DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([requester, status, updatedAt])
+  @@index([consultant, status, updatedAt])
+}
+
+model InfoFiFastTransfer {
+  id              String   @id @default(cuid())
+  externalRef     String   @unique
+  requestId       String?
+  jobId           String?
+  direction       String
+  status          String
+  paymentToken    String
+  fromAddress     String
+  toAddress       String
+  amountWei       String
+  txHash          String?
+  nonce           Int?
+  certificateJson String?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([requestId, direction, createdAt])
+  @@index([jobId, direction, createdAt])
+}
+
 model IndexerState {
   id              String   @id @default(cuid())
   chainId         Int

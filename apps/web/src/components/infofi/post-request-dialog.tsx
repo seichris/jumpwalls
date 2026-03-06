@@ -4,12 +4,15 @@ import * as React from "react";
 import type { Address } from "viem";
 import { parseEther, parseUnits } from "viem";
 
+import { useUserRail } from "@/components/providers/user-rail-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { deriveRequestId, ETH_TOKEN, postRequestTx, randomSalt, usdcForChain } from "@/lib/infofi-contract";
+import { createFastRequest, getFastConfig } from "@/lib/api";
+import { connectFastWallet, transferFast } from "@/lib/fast-wallet";
+import { deriveRequestId, ETH_TOKEN, FAST_SETTLEMENT_TOKEN, parseAmount, postRequestTx, randomSalt, usdcForChain } from "@/lib/infofi-contract";
 import { fullTextRisk, logUiAction, lowBudgetWarning } from "@/lib/infofi-ux";
 import { friendlyTxError } from "@/lib/utils";
 
@@ -26,6 +29,7 @@ export function PostRequestDialog({
   initialSourceURI?: string;
   onCreated?: (requestId: string) => void;
 }) {
+  const { activeRail, ensureRail } = useUserRail();
   const [sourceURI, setSourceURI] = React.useState("");
   const [question, setQuestion] = React.useState("");
   const [tokenMode, setTokenMode] = React.useState<"ETH" | "USDC">("USDC");
@@ -34,7 +38,7 @@ export function PostRequestDialog({
   const [error, setError] = React.useState<string | null>(null);
 
   const usdc = usdcForChain();
-  const paymentToken = tokenMode === "ETH" ? ETH_TOKEN : usdc || ETH_TOKEN;
+  const paymentToken = activeRail === "FAST" ? FAST_SETTLEMENT_TOKEN : tokenMode === "ETH" ? ETH_TOKEN : usdc || ETH_TOKEN;
   const budgetWarning = lowBudgetWarning(paymentToken, maxAmount);
   const questionRisk = fullTextRisk(question);
 
@@ -67,6 +71,28 @@ export function PostRequestDialog({
     setSubmitting(true);
     setError(null);
     try {
+      if (activeRail === "FAST") {
+        await ensureRail("FAST");
+        const { wallet, account } = await connectFastWallet();
+        const { treasuryAddress } = await getFastConfig();
+        const fundingCertificate = await transferFast({
+          wallet,
+          account,
+          recipient: treasuryAddress,
+          amount: maxAmount,
+        });
+        const created = await createFastRequest({
+          sourceURI: sourceURI.trim(),
+          question: question.trim(),
+          maxAmountWei: parseAmount(FAST_SETTLEMENT_TOKEN, maxAmount).toString(),
+          fundingCertificate,
+        });
+        logUiAction("post_request_fast", { token: FAST_SETTLEMENT_TOKEN, maxAmount });
+        onOpenChange(false);
+        onCreated?.(created.requestId);
+        return;
+      }
+
       const paymentToken = tokenMode === "ETH" ? ETH_TOKEN : usdc;
       if (!paymentToken) throw new Error("USDC is not configured for this chain.");
       const maxAmountWei =
@@ -106,7 +132,9 @@ export function PostRequestDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Post Request</DialogTitle>
-          <DialogDescription>Create an on-chain InfoFi request.</DialogDescription>
+          <DialogDescription>
+            {activeRail === "FAST" ? "Fund a FAST-mode request and publish it after treasury verification." : "Create an on-chain InfoFi request."}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
@@ -132,16 +160,20 @@ export function PostRequestDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
-              <Label>Payment Token</Label>
-              <Select value={tokenMode} onValueChange={(value) => setTokenMode(value as "ETH" | "USDC")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ETH">ETH</SelectItem>
-                  <SelectItem value="USDC">USDC</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>{activeRail === "FAST" ? "Settlement" : "Payment Token"}</Label>
+              {activeRail === "FAST" ? (
+                <Input value={FAST_SETTLEMENT_TOKEN} readOnly />
+              ) : (
+                <Select value={tokenMode} onValueChange={(value) => setTokenMode(value as "ETH" | "USDC")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ETH">ETH</SelectItem>
+                    <SelectItem value="USDC">USDC</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="grid gap-2">
@@ -150,7 +182,7 @@ export function PostRequestDialog({
                 id="max-amount"
                 type="number"
                 min="0"
-                step={tokenMode === "ETH" ? "0.000001" : "0.01"}
+                step={activeRail === "FAST" ? "0.01" : tokenMode === "ETH" ? "0.000001" : "0.01"}
                 value={maxAmount}
                 onChange={(event) => setMaxAmount(event.target.value)}
               />
@@ -158,7 +190,9 @@ export function PostRequestDialog({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Fair-use guardrail: submit requests for digests and answers, not full-text redistribution.
+            {activeRail === "FAST"
+              ? "FAST mode moves payment through Jumpwalls treasury custody. Fair-use guardrail still applies."
+              : "Fair-use guardrail: submit requests for digests and answers, not full-text redistribution."}
           </p>
           {questionRisk ? (
             <p className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
@@ -179,7 +213,7 @@ export function PostRequestDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!canSubmit || submitting}>
-            {submitting ? "Posting..." : "Post Request"}
+            {submitting ? (activeRail === "FAST" ? "Funding..." : "Posting...") : "Post Request"}
           </Button>
         </DialogFooter>
       </DialogContent>

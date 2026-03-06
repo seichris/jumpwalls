@@ -17,7 +17,11 @@
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@infofi/shared": "workspace:^",
+    "@mysten/bcs": "^1.8.0",
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^1.8.0",
     "@prisma/client": "^6.2.1",
+    "bech32": "^2.0.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
     "viem": "^2.21.55",

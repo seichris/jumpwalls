@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Moon, RefreshCw, Sun } from "lucide-react";
 
+import { AccountRailControls } from "@/components/infofi/account-rail-controls";
 import { BrandLockIcon } from "@/components/infofi/brand-lock-icon";
 import { PostRequestDialog } from "@/components/infofi/post-request-dialog";
-import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
+import { RailBadge } from "@/components/infofi/rail-badge";
+import { useUserRail } from "@/components/providers/user-rail-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -372,6 +374,7 @@ function SourceFavicon({
 export default function HomePage() {
   const router = useRouter();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
+  const { activeRail } = useUserRail();
   const { address, chainId, hasProvider, setProviderPreference, connect, switchChain } = useWallet();
   const { theme, setTheme, mounted } = useTheme();
   const privyEnabled = isPrivyFeatureEnabled();
@@ -389,6 +392,7 @@ export default function HomePage() {
   const [sourceFilter, setSourceFilter] = React.useState("");
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
+  const postRequestBlockedByChain = activeRail === "BASE" && wrongChain;
 
   React.useEffect(() => {
     if (!privyEnabled) return;
@@ -514,17 +518,16 @@ export default function HomePage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {privyEnabled ? (
-            <PrivyConnectWalletButton expectedChainId={expectedChainId} walletAddress={address} walletChainId={chainId} />
+            <AccountRailControls expectedChainId={expectedChainId} walletAddress={address} walletChainId={chainId} />
           ) : null}
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
           {!privyEnabled && hasProvider && !address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
-          {wrongChain ? (
+          {activeRail === "BASE" && wrongChain ? (
             <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>
               Switch to Base Chain
             </Button>
           ) : null}
-
-          <Button onClick={() => openPostRequestDialog("")} disabled={!address || wrongChain}>
+          <Button onClick={() => openPostRequestDialog("")} disabled={!address || postRequestBlockedByChain}>
             Post Request
           </Button>
           <Button variant="outline" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} disabled={!mounted}>
@@ -569,7 +572,7 @@ export default function HomePage() {
                   className="inline-flex size-6 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                   title={sourceDisplay}
                   onClick={() => openPostRequestDialog(`https://${row.domain}`)}
-                  disabled={!address || wrongChain}
+                  disabled={!address || postRequestBlockedByChain}
                 >
                   <SourceFavicon source={row.domain} className="size-6 rounded-sm" showFallback runtime={runtime} />
                   <span className="sr-only">{sourceDisplay}</span>
@@ -601,6 +604,7 @@ export default function HomePage() {
             <SelectItem value="ALL">All tokens</SelectItem>
             <SelectItem value="ETH">ETH</SelectItem>
             <SelectItem value="USDC">USDC</SelectItem>
+            <SelectItem value="SETUSDC">SETUSDC</SelectItem>
           </SelectContent>
         </Select>
 
@@ -672,7 +676,12 @@ export default function HomePage() {
                       </div>
                     </TableCell>
                     <TableCell className="max-w-[360px] truncate">{row.question}</TableCell>
-                    <TableCell>{tokenSymbol(row.paymentToken)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <RailBadge rail={row.rail} />
+                        <span>{tokenSymbol(row.paymentToken)}</span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right font-mono text-xs">
                       {formatAmount(row.paymentToken, row.maxAmountWei)}
                     </TableCell>

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { PrivyAppProvider } from "@/components/providers/privy-provider";
+import { UserRailProvider } from "@/components/providers/user-rail-provider";
 import { getSiteOrigin } from "@/lib/site-origin";
 import "./globals.css";
 
@@ -117,7 +118,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <PrivyAppProvider>{children}</PrivyAppProvider>
+        <PrivyAppProvider>
+          <UserRailProvider>{children}</UserRailProvider>
+        </PrivyAppProvider>
       </body>
     </html>
   );

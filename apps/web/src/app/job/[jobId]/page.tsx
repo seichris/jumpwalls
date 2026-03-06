@@ -5,14 +5,17 @@ import { useParams } from "next/navigation";
 import * as React from "react";
 import { isAddress, type Address, type Hex } from "viem";
 
+import { AccountRailControls } from "@/components/infofi/account-rail-controls";
 import { BrandLockIcon } from "@/components/infofi/brand-lock-icon";
+import { RailBadge } from "@/components/infofi/rail-badge";
+import { useUserRail } from "@/components/providers/user-rail-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { createDigest, getDigestByMetadataURI, getJobById, getJobReimbursementPreview } from "@/lib/api";
+import { acceptFastJob, createDigest, deliverFastJob, getDigestByMetadataURI, getJobById, getJobReimbursementPreview, refundFastJob } from "@/lib/api";
 import {
   deliverDigestTx,
   formatAmount,
@@ -28,6 +31,7 @@ import {
 import { copyText, logUiAction } from "@/lib/infofi-ux";
 import type { InfoFiJobWithDetails, InfoFiReimbursementPreview } from "@/lib/infofi-types";
 import { useWallet } from "@/lib/hooks/useWallet";
+import { isPrivyFeatureEnabled } from "@/lib/privy";
 import { errorMessage, friendlyTxError } from "@/lib/utils";
 
 function shortHash(value: string) {
@@ -97,6 +101,7 @@ export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
   const jobId = (params?.jobId || "").toLowerCase();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
+  const { activeRail, ensureRail } = useUserRail();
   const { address, chainId, connect, switchChain } = useWallet();
 
   const [data, setData] = React.useState<InfoFiJobWithDetails | null>(null);
@@ -128,6 +133,10 @@ export default function JobDetailPage() {
   const [submittingRating, setSubmittingRating] = React.useState(false);
 
   const wrongChain = chainId !== null && chainId !== expectedChainId;
+  const privyEnabled = isPrivyFeatureEnabled();
+  const jobIsFast = data?.rail === "FAST";
+  const actionsBlockedByChain = !jobIsFast && wrongChain;
+  const showSwitchChain = wrongChain && (data ? data.rail === "BASE" : activeRail === "BASE");
 
   const fetchJob = React.useCallback(async () => {
     if (!jobId) return;
@@ -135,19 +144,20 @@ export default function JobDetailPage() {
     setError(null);
     setReimbursementError(null);
     try {
-      const [job, preview] = await Promise.all([
-        getJobById(jobId),
-        getJobReimbursementPreview(jobId).catch((err: unknown) => {
-          setReimbursementError(errorMessage(err));
-          return null;
-        }),
-      ]);
+      const job = await getJobById(jobId);
       if (!job) {
         setData(null);
         setReimbursementPreview(null);
         setError("Job not found.");
         return;
       }
+      const preview =
+        job.rail === "BASE"
+          ? await getJobReimbursementPreview(jobId).catch((err: unknown) => {
+              setReimbursementError(errorMessage(err));
+              return null;
+            })
+          : null;
       setReimbursementPreview(preview);
       if (!job.digest && job.metadataURI) {
         const digest = await getDigestByMetadataURI(job.metadataURI);
@@ -156,7 +166,11 @@ export default function JobDetailPage() {
         setData(job);
       }
       setLagWarning(null);
-      try {
+      if (job.rail !== "BASE") {
+        setPayoutNonce("-");
+        setRefundNonce("-");
+      }
+      if (job.rail === "BASE") try {
         const onchain = await readJobOnchain(jobId as Hex);
         if (!onchain) {
           setLagWarning("API has this job but contract read returned empty. Indexing may be stale.");
@@ -246,12 +260,22 @@ export default function JobDetailPage() {
         proof: proofText.trim() || null,
         citations: parsedCitations,
       });
-      await deliverDigestTx({
-        jobId: data.jobId as Hex,
-        digestHash: created.digestHash as Hex,
-        metadataURI: created.metadataURI,
-        proofTypeOrURI: proofText.trim() || "reputation-only",
-      });
+      if (data.rail === "FAST") {
+        await ensureRail("FAST");
+        await deliverFastJob({
+          jobId: data.jobId,
+          digestHash: created.digestHash,
+          metadataURI: created.metadataURI,
+          proofTypeOrURI: proofText.trim() || "reputation-only",
+        });
+      } else {
+        await deliverDigestTx({
+          jobId: data.jobId as Hex,
+          digestHash: created.digestHash as Hex,
+          metadataURI: created.metadataURI,
+          proofTypeOrURI: proofText.trim() || "reputation-only",
+        });
+      }
       logUiAction("deliver_digest", { jobId: data.jobId, metadataURI: created.metadataURI });
       await fetchJob();
     } catch (err: unknown) {
@@ -267,6 +291,12 @@ export default function JobDetailPage() {
     setActionError(null);
     setSubmittingPayout(true);
     try {
+      if (data.rail === "FAST") {
+        await ensureRail("FAST");
+        await acceptFastJob(data.jobId);
+        await fetchJob();
+        return;
+      }
       if (!isAddress(payoutRecipient as Address)) throw new Error("Recipient must be a valid address.");
       const amountWei = parseAmount(data.paymentToken, payoutAmount);
       await payoutByRequesterTx({
@@ -337,6 +367,12 @@ export default function JobDetailPage() {
     setActionError(null);
     setSubmittingRefund(true);
     try {
+      if (data.rail === "FAST") {
+        await ensureRail("FAST");
+        await refundFastJob(data.jobId);
+        await fetchJob();
+        return;
+      }
       const amountWei = parseAmount(data.paymentToken, refundAmount);
       await refundByRequesterTx({
         jobId: data.jobId as Hex,
@@ -388,8 +424,9 @@ export default function JobDetailPage() {
           <h1 className="text-2xl font-semibold">Job</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {!address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
-          {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
+          {privyEnabled ? <AccountRailControls expectedChainId={expectedChainId} walletAddress={address} walletChainId={chainId} /> : null}
+          {!privyEnabled && !address ? <Button onClick={() => connect()}>Connect Wallet</Button> : null}
+          {showSwitchChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
           <Button variant="outline" onClick={() => fetchJob()}>
             Refresh
           </Button>
@@ -410,6 +447,7 @@ export default function JobDetailPage() {
         <div className="space-y-6">
           <section className="rounded-lg border p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
+              <RailBadge rail={data.rail} />
               <Badge variant={statusVariant(data.status)}>{data.status}</Badge>
               <span className="font-mono text-xs text-muted-foreground">{data.jobId}</span>
               <Button
@@ -540,14 +578,15 @@ export default function JobDetailPage() {
                   Fair-use guardrail: submit summaries/answers only, not full source text.
                 </p>
                 <div>
-                  <Button onClick={onSaveAndDeliver} disabled={wrongChain || submittingDigest}>
-                    {submittingDigest ? "Saving + Delivering..." : "Save Digest + Deliver On-Chain"}
+                  <Button onClick={onSaveAndDeliver} disabled={actionsBlockedByChain || submittingDigest}>
+                    {submittingDigest ? "Saving + Delivering..." : data.rail === "FAST" ? "Save Digest + Deliver" : "Save Digest + Deliver On-Chain"}
                   </Button>
                 </div>
               </div>
             ) : null}
           </section>
 
+          {data.rail === "BASE" ? (
           <section className="rounded-lg border p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold">x402 Source Payments</h2>
@@ -676,10 +715,32 @@ export default function JobDetailPage() {
               </div>
             )}
           </section>
+          ) : null}
 
           <section className="rounded-lg border p-4">
             <h2 className="mb-3 text-sm font-semibold">Settlement</h2>
-            {isRequester && hasDelivered && !isClosed ? (
+            {data.rail === "FAST" ? (
+              isRequester && !isClosed ? (
+                <div className="grid gap-3 md:max-w-xl">
+                  <p className="text-sm text-muted-foreground">
+                    FAST settlement is treasury-backed. Accept pays the consultant and refunds any unused amount to the requester FAST address snapshot.
+                  </p>
+                  {hasDelivered ? (
+                    <Button onClick={onPayout} disabled={submittingPayout}>
+                      {submittingPayout ? "Accepting..." : "Accept + Settle FAST Job"}
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" onClick={onRefund} disabled={submittingRefund}>
+                      {submittingRefund ? "Refunding..." : "Refund FAST Job"}
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  FAST settlement actions are available to the requester while funds remain.
+                </p>
+              )
+            ) : isRequester && hasDelivered && !isClosed ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-md border p-3 md:col-span-2">
                   <h3 className="mb-2 text-sm font-medium">Payout With Reimbursements</h3>
@@ -724,7 +785,7 @@ export default function JobDetailPage() {
                         </Table>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Button onClick={onRunSuggestedPayouts} disabled={wrongChain || submittingSuggestedPayouts || !canRunSuggestedPayouts}>
+                        <Button onClick={onRunSuggestedPayouts} disabled={actionsBlockedByChain || submittingSuggestedPayouts || !canRunSuggestedPayouts}>
                           {submittingSuggestedPayouts ? "Executing Suggested Payouts..." : "Execute Suggested Payouts"}
                         </Button>
                         {!reimbursementPreview.canAutoSettle ? (
@@ -755,7 +816,7 @@ export default function JobDetailPage() {
                       value={payoutAmount}
                       onChange={(event) => setPayoutAmount(event.target.value)}
                     />
-                    <Button onClick={onPayout} disabled={wrongChain || submittingPayout}>
+                    <Button onClick={onPayout} disabled={actionsBlockedByChain || submittingPayout}>
                       {submittingPayout ? "Paying..." : "Payout"}
                     </Button>
                   </div>
@@ -774,7 +835,7 @@ export default function JobDetailPage() {
                       value={refundAmount}
                       onChange={(event) => setRefundAmount(event.target.value)}
                     />
-                    <Button variant="secondary" onClick={onRefund} disabled={wrongChain || submittingRefund}>
+                    <Button variant="secondary" onClick={onRefund} disabled={actionsBlockedByChain || submittingRefund}>
                       {submittingRefund ? "Refunding..." : "Refund"}
                     </Button>
                   </div>
@@ -787,6 +848,7 @@ export default function JobDetailPage() {
             )}
           </section>
 
+          {data.rail === "BASE" ? (
           <section className="rounded-lg border p-4">
             <h2 className="mb-3 text-sm font-semibold">Ratings</h2>
             {((isRequester || isConsultant) && hasDelivered && !alreadyRated) ? (
@@ -807,7 +869,7 @@ export default function JobDetailPage() {
                   value={ratingUri}
                   onChange={(event) => setRatingUri(event.target.value)}
                 />
-                <Button onClick={onRate} disabled={wrongChain || submittingRating}>
+                <Button onClick={onRate} disabled={actionsBlockedByChain || submittingRating}>
                   {submittingRating ? "Submitting..." : "Submit Rating"}
                 </Button>
               </div>
@@ -848,6 +910,7 @@ export default function JobDetailPage() {
               </TableBody>
             </Table>
           </section>
+          ) : null}
 
           <section className="rounded-lg border">
             <div className="flex items-center justify-between border-b px-4 py-3">
