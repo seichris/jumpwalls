@@ -12,11 +12,6 @@ const nextConfig: NextConfig = {
         hostname: "fast.xyz",
         pathname: "/fast.svg",
       },
-      {
-        protocol: "https",
-        hostname: "www.base.org",
-        pathname: "/base-square.svg",
-      },
     ],
   },
   experimental: {
