@@ -12,7 +12,8 @@ import {
 import { connectFastWallet, signFastMessage } from "@/lib/fast-wallet";
 import { useWallet } from "@/lib/hooks/useWallet";
 import type { InfoFiRail, InfoFiUserProfile, InfoFiUserProfileResponse } from "@/lib/infofi-types";
-import { getActiveEthereumProvider } from "@/lib/wallet";
+import { isPrivyFeatureEnabled } from "@/lib/privy";
+import { getActiveEthereumProvider, getBridgedWalletState, type Eip1193Provider } from "@/lib/wallet";
 
 type UserRailContextValue = {
   activeRail: InfoFiRail;
@@ -41,17 +42,17 @@ function writeStoredRail(next: InfoFiRail) {
   window.localStorage.setItem(ACTIVE_RAIL_STORAGE_KEY, next);
 }
 
-async function signEvmMessage(address: string, message: string) {
-  const provider = getActiveEthereumProvider();
-  if (!provider?.request) throw new Error("Connect your EVM wallet first.");
+async function signEvmMessage(address: string, message: string, provider?: Eip1193Provider | null) {
+  const signer = provider ?? getActiveEthereumProvider();
+  if (!signer?.request) throw new Error("Connect your EVM wallet first.");
   try {
-    const result = await provider.request({
+    const result = await signer.request({
       method: "personal_sign",
       params: [message, address],
     });
     if (typeof result === "string" && result) return result;
   } catch {
-    const fallback = await provider.request({
+    const fallback = await signer.request({
       method: "eth_sign",
       params: [address, message],
     });
@@ -61,8 +62,11 @@ async function signEvmMessage(address: string, message: string) {
 }
 
 export function UserRailProvider({ children }: { children: React.ReactNode }) {
-  const { address } = useWallet();
+  const { address, bridgedAddress } = useWallet();
+  const privyEnabled = isPrivyFeatureEnabled();
   const normalizedAddress = address?.toLowerCase() ?? null;
+  const normalizedBridgedAddress = bridgedAddress?.toLowerCase() ?? null;
+  const sessionAddress = privyEnabled ? normalizedBridgedAddress : normalizedAddress;
   const [activeRail, setActiveRailState] = React.useState<InfoFiRail>("BASE");
   const [profileResponse, setProfileResponse] = React.useState<InfoFiUserProfileResponse>({ authenticated: false, user: null });
   const [loadingProfile, setLoadingProfile] = React.useState(true);
@@ -86,39 +90,50 @@ export function UserRailProvider({ children }: { children: React.ReactNode }) {
   }, [refreshProfile]);
 
   React.useEffect(() => {
-    if (activeRail === "FAST" && (!normalizedAddress || !profileResponse.user?.fastAddress || profileResponse.user.evmAddress !== normalizedAddress)) {
+    if (activeRail === "FAST" && (!sessionAddress || !profileResponse.user?.fastAddress || profileResponse.user.evmAddress !== sessionAddress)) {
       setActiveRailState("BASE");
       writeStoredRail("BASE");
     }
-  }, [activeRail, normalizedAddress, profileResponse.user]);
+  }, [activeRail, profileResponse.user, sessionAddress]);
 
   const authenticatedForCurrentWallet = Boolean(
-    normalizedAddress &&
+    sessionAddress &&
       profileResponse.authenticated &&
-      profileResponse.user?.evmAddress?.toLowerCase() === normalizedAddress
+      profileResponse.user?.evmAddress?.toLowerCase() === sessionAddress
   );
   const profile = authenticatedForCurrentWallet ? profileResponse.user : null;
   const fastBound = Boolean(profile?.fastAddress);
 
   const ensureSession = React.useCallback(async () => {
-    if (!normalizedAddress) throw new Error("Connect your EVM wallet first.");
+    if (!sessionAddress) {
+      throw new Error(privyEnabled ? "Connect the Privy wallet first." : "Connect your EVM wallet first.");
+    }
     if (authenticatedForCurrentWallet && profile) return profile;
 
-    const challenge = await createUserAuthChallenge(normalizedAddress);
-    const signature = await signEvmMessage(normalizedAddress, challenge.messageToSign);
+    const provider = privyEnabled ? getBridgedWalletState().provider : getActiveEthereumProvider();
+    if (!provider?.request) {
+      throw new Error(privyEnabled ? "Connect the Privy wallet first." : "Connect your EVM wallet first.");
+    }
+
+    const challenge = await createUserAuthChallenge(sessionAddress);
+    const signature = await signEvmMessage(sessionAddress, challenge.messageToSign, provider);
     await verifyUserAuthChallenge({
-      address: normalizedAddress,
+      address: sessionAddress,
       nonce: challenge.nonce,
       signature,
     });
     const next = await getUserProfile();
     setProfileResponse(next);
     return next.user;
-  }, [authenticatedForCurrentWallet, normalizedAddress, profile]);
+  }, [authenticatedForCurrentWallet, privyEnabled, profile, sessionAddress]);
 
   const bindFastWallet = React.useCallback(async () => {
-    await ensureSession();
+    if (!sessionAddress) {
+      throw new Error(privyEnabled ? "Connect the Privy wallet first." : "Connect your EVM wallet first.");
+    }
+
     const { wallet, account } = await connectFastWallet();
+    await ensureSession();
     const challenge = await createFastBindChallenge({
       address: account.address,
       publicKey: account.publicKey,
@@ -139,7 +154,7 @@ export function UserRailProvider({ children }: { children: React.ReactNode }) {
     setActiveRailState("FAST");
     writeStoredRail("FAST");
     return user;
-  }, [ensureSession]);
+  }, [ensureSession, privyEnabled, sessionAddress]);
 
   const setActiveRail = React.useCallback((next: InfoFiRail) => {
     setActiveRailState(next);
