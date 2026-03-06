@@ -131,9 +131,11 @@ export function UserRailProvider({ children }: { children: React.ReactNode }) {
     if (!sessionAddress) {
       throw new Error(privyEnabled ? "Connect the Privy wallet first." : "Connect your EVM wallet first.");
     }
+    if (!authenticatedForCurrentWallet || !profile) {
+      throw new Error(privyEnabled ? "Authenticate with the Privy wallet first." : "Authenticate with your EVM wallet first.");
+    }
 
     const { wallet, account } = await connectFastWallet();
-    await ensureSession();
     const challenge = await createFastBindChallenge({
       address: account.address,
       publicKey: account.publicKey,
@@ -154,7 +156,7 @@ export function UserRailProvider({ children }: { children: React.ReactNode }) {
     setActiveRailState("FAST");
     writeStoredRail("FAST");
     return user;
-  }, [ensureSession, privyEnabled, sessionAddress]);
+  }, [authenticatedForCurrentWallet, privyEnabled, profile, sessionAddress]);
 
   const setActiveRail = React.useCallback((next: InfoFiRail) => {
     setActiveRailState(next);

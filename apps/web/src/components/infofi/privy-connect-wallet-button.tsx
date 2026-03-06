@@ -8,6 +8,7 @@ import { formatUnits, type Address } from "viem";
 import { PrivyFundWalletDialog, type PrivyFundingOutcome } from "@/components/infofi/privy-fund-wallet-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useUserRail } from "@/components/providers/user-rail-provider";
 import { logUiAction } from "@/lib/infofi-ux";
 import { readWalletBalanceSnapshot, type WalletBalanceSnapshot } from "@/lib/wallet-balance";
 
@@ -78,7 +79,9 @@ export type { PrivyFundingOutcome };
 export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walletChainId, onFundingOutcome }: PrivyConnectWalletButtonProps) {
   const { ready, authenticated, login, connectWallet } = usePrivy();
   const { wallets } = useWallets();
+  const { ensureSession, authenticatedForCurrentWallet } = useUserRail();
   const [error, setError] = React.useState<string | null>(null);
+  const [authenticatingSession, setAuthenticatingSession] = React.useState(false);
   const [balanceSummary, setBalanceSummary] = React.useState("Loading balances...");
   const [balanceSnapshot, setBalanceSnapshot] = React.useState<WalletBalanceSnapshot | null>(null);
 
@@ -133,6 +136,34 @@ export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walle
   }
 
   if (privyWalletAddress) {
+    if (!authenticatedForCurrentWallet) {
+      return (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            disabled={authenticatingSession}
+            onClick={async () => {
+              setError(null);
+              setAuthenticatingSession(true);
+              try {
+                await ensureSession();
+                logUiAction("privy_wallet_session_authenticated");
+              } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : "Failed to authenticate wallet.";
+                setError(message);
+                logUiAction("privy_wallet_session_failed", { message });
+              } finally {
+                setAuthenticatingSession(false);
+              }
+            }}
+          >
+            {authenticatingSession ? "Authenticating..." : "Authenticate Wallet"}
+          </Button>
+          {error ? <span className="text-xs text-destructive">{error}</span> : null}
+        </div>
+      );
+    }
+
     const resolvedWalletAddress = walletAddress || (privyWalletAddress as Address);
     const canShowFundingAction = typeof expectedChainId === "number";
     const usdcIsZero = balanceSnapshot?.usdcWei === 0n;
