@@ -4,6 +4,7 @@ import * as React from "react";
 import type { Address } from "viem";
 
 import { PrivyConnectWalletButton, type PrivyFundingOutcome } from "@/components/infofi/privy-connect-wallet-button";
+import { RailLogo } from "@/components/infofi/rail-badge";
 import { Button } from "@/components/ui/button";
 import { useUserRail } from "@/components/providers/user-rail-provider";
 
@@ -51,7 +52,7 @@ export function AccountRailControls({
         <div className={railWrapperClass(activeRail === "FAST")}>
           <Button
             variant="ghost"
-            className="h-9 px-3 font-mono"
+            className="h-9 gap-2 px-3"
             disabled={!walletAddress || loadingProfile}
             onClick={async () => {
               setError(null);
@@ -66,7 +67,16 @@ export function AccountRailControls({
               }
             }}
           >
-            {loadingProfile ? "FAST..." : fastBound ? shortFastAddress(profile?.fastAddress) : "Enable FAST"}
+            {loadingProfile ? (
+              "FAST..."
+            ) : fastBound ? (
+              <span className="font-mono">{shortFastAddress(profile?.fastAddress)}</span>
+            ) : (
+              <>
+                <span>Enable</span>
+                <RailLogo rail="FAST" className="h-3.5 w-auto" />
+              </>
+            )}
           </Button>
         </div>
       </div>

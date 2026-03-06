@@ -678,7 +678,7 @@ export default function HomePage() {
                     <TableCell className="max-w-[360px] truncate">{row.question}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <RailBadge rail={row.rail} />
+                        <RailBadge rail={row.rail} logoOnly />
                         <span>{tokenSymbol(row.paymentToken)}</span>
                       </div>
                     </TableCell>
