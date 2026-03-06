@@ -5,6 +5,19 @@ import { isAddress, keccak256, stringToHex, verifyMessage } from "viem";
 import { getPrisma } from "./db.js";
 import { combineFairUseWithLlm, parseFairUseEnforcementMode, reviewDigestFairUse } from "./fairUse.js";
 import { reviewDigestFairUseWithGemini } from "./fairUseGemini.js";
+import {
+  FAST_SETTLEMENT_TOKEN_DECIMALS,
+  FAST_SETTLEMENT_TOKEN_ID_HEX,
+  FAST_SETTLEMENT_TOKEN_SYMBOL,
+  fastTreasuryAddress,
+  normalizeFastAddress,
+  publicKeyToFastAddress,
+  submitFastTreasuryTransfer,
+  type FastTransactionCertificate,
+  utf8ToHex,
+  verifyFastFundingCertificate,
+  verifyFastMessageSignature,
+} from "./fast.js";
 import { buildReimbursementPreview } from "./x402.js";
 
 const AGENT_CHALLENGE_PURPOSES = new Set(["signup", "heartbeat"] as const);
@@ -15,7 +28,12 @@ const AGENT_HEARTBEAT_MAX_TTL_SECONDS = 900;
 const DOMAIN_SIGNAL_SOURCE_EXTENSION = "EXTENSION";
 const DOMAIN_SIGNAL_MAX_BUCKETS_PER_REQUEST = 200;
 const AGENT_SIGNATURE_REGEX = /^0x[a-fA-F0-9]{130}$/;
+const FAST_SIGNATURE_HEX_REGEX = /^[a-fA-F0-9]{128}$/;
+const FAST_PUBLIC_KEY_REGEX = /^[a-fA-F0-9]{64}$/;
 const RATE_LIMIT_STORE_SWEEP_MAX = 10_000;
+const USER_AUTH_CHALLENGE_TTL_SECONDS_DEFAULT = 300;
+const USER_SESSION_TTL_SECONDS_DEFAULT = 60 * 60 * 24 * 7;
+const USER_SESSION_COOKIE = "infofi_user_session";
 
 type AgentChallengePurpose = "signup" | "heartbeat";
 type ParsedAgentCapability = {
@@ -115,6 +133,59 @@ export async function buildServer() {
     const trimmed = value.trim();
     if (!isAddress(trimmed)) return "";
     return trimmed.toLowerCase();
+  }
+
+  function normalizeFastAddressOrEmpty(value: unknown) {
+    if (typeof value !== "string") return "";
+    try {
+      return normalizeFastAddress(value);
+    } catch {
+      return "";
+    }
+  }
+
+  function sha256Hex(value: string) {
+    return crypto.createHash("sha256").update(value).digest("hex");
+  }
+
+  function randomTokenHex(bytes = 32) {
+    return crypto.randomBytes(bytes).toString("hex");
+  }
+
+  function parseCookieHeader(headerValue: string | string[] | undefined) {
+    const raw = Array.isArray(headerValue) ? headerValue[0] || "" : headerValue || "";
+    const out: Record<string, string> = {};
+    for (const part of raw.split(";")) {
+      const idx = part.indexOf("=");
+      if (idx <= 0) continue;
+      const key = part.slice(0, idx).trim();
+      if (!key) continue;
+      out[key] = decodeURIComponent(part.slice(idx + 1).trim());
+    }
+    return out;
+  }
+
+  function appendSetCookie(reply: FastifyReply, cookie: string) {
+    const current = reply.getHeader("set-cookie");
+    if (!current) {
+      reply.header("set-cookie", cookie);
+      return;
+    }
+    if (Array.isArray(current)) {
+      reply.header("set-cookie", [...current, cookie]);
+      return;
+    }
+    reply.header("set-cookie", [String(current), cookie]);
+  }
+
+  function buildSessionCookie(value: string, maxAgeSeconds: number) {
+    const secure = webOrigin.startsWith("https://") ? "; Secure" : "";
+    return `${USER_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+  }
+
+  function clearSessionCookie() {
+    const secure = webOrigin.startsWith("https://") ? "; Secure" : "";
+    return `${USER_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
   }
 
   function parseNonNegativeInt(value: unknown, fallback: number) {
@@ -337,6 +408,110 @@ export async function buildServer() {
     if (used.count !== 1) return { ok: false as const, error: "Challenge already used" };
 
     return { ok: true as const };
+  }
+
+  function buildUserChallengeMessage(args: {
+    purpose: "session" | "fast-bind";
+    evmAddress: string;
+    nonce: string;
+    expiresAt: Date;
+    fastAddress?: string;
+    fastPublicKey?: string;
+  }) {
+    return [
+      "InfoFi User Authentication",
+      `Purpose: ${args.purpose}`,
+      `Address: ${args.evmAddress}`,
+      args.fastAddress ? `FastAddress: ${args.fastAddress}` : null,
+      args.fastPublicKey ? `FastPublicKey: ${args.fastPublicKey}` : null,
+      `Nonce: ${args.nonce}`,
+      `ExpiresAt: ${args.expiresAt.toISOString()}`,
+      `ChainId: ${Number.isFinite(chainId) ? chainId : 0}`,
+      `Contract: ${contractAddress || "unconfigured"}`
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  async function verifyAndConsumeUserChallenge(args: {
+    purpose: "session" | "fast-bind";
+    evmAddress: string;
+    nonce: string;
+    verify: (challenge: {
+      message: string;
+      fastAddress: string | null;
+      fastPublicKey: string | null;
+    }) => Promise<boolean>;
+  }) {
+    const challenge = await prisma.infoFiUserAuthChallenge.findUnique({ where: { nonce: args.nonce } });
+    if (!challenge) return { ok: false as const, error: "Invalid nonce" };
+    if (challenge.evmAddress !== args.evmAddress) return { ok: false as const, error: "Challenge user mismatch" };
+    if (challenge.purpose !== args.purpose) return { ok: false as const, error: "Challenge purpose mismatch" };
+    if (challenge.usedAt) return { ok: false as const, error: "Challenge already used" };
+    if (challenge.expiresAt.getTime() <= Date.now()) return { ok: false as const, error: "Challenge expired" };
+
+    const valid = await args.verify({
+      message: challenge.message,
+      fastAddress: challenge.fastAddress,
+      fastPublicKey: challenge.fastPublicKey,
+    });
+    if (!valid) return { ok: false as const, error: "Signature verification failed" };
+
+    const used = await prisma.infoFiUserAuthChallenge.updateMany({
+      where: { id: challenge.id, usedAt: null },
+      data: { usedAt: new Date() }
+    });
+    if (used.count !== 1) return { ok: false as const, error: "Challenge already used" };
+
+    return {
+      ok: true as const,
+      challenge,
+    };
+  }
+
+  async function readUserSession(req: FastifyRequest) {
+    const cookies = parseCookieHeader(req.headers.cookie);
+    const rawToken = cookies[USER_SESSION_COOKIE];
+    if (!rawToken) return null;
+    const tokenHash = sha256Hex(rawToken);
+    const session = await prisma.infoFiUserSession.findUnique({ where: { tokenHash } });
+    if (!session) return null;
+    if (session.expiresAt.getTime() <= Date.now()) {
+      await prisma.infoFiUserSession.deleteMany({ where: { id: session.id } });
+      return null;
+    }
+    return session;
+  }
+
+  async function touchUserSession(sessionId: string) {
+    await prisma.infoFiUserSession.updateMany({
+      where: { id: sessionId },
+      data: { lastSeenAt: new Date() }
+    });
+  }
+
+  async function requireUserSession(req: FastifyRequest, reply: FastifyReply) {
+    const session = await readUserSession(req);
+    if (!session) {
+      reply.code(401).send({ error: "User session required" });
+      return null;
+    }
+    await touchUserSession(session.id);
+    return session;
+  }
+
+  async function getUserProfileForAddress(evmAddress: string) {
+    const normalized = normalizeAddress(evmAddress);
+    if (!normalized) return null;
+    return await prisma.infoFiUserProfile.findUnique({ where: { evmAddress: normalized } });
+  }
+
+  async function requireFastBoundProfile(evmAddress: string) {
+    const profile = await getUserProfileForAddress(evmAddress);
+    if (!profile?.fastAddress || !profile.fastPublicKey) {
+      throw new Error("FAST wallet is not bound for this account.");
+    }
+    return profile;
   }
 
   function parseCapabilityEntries(raw: unknown) {
@@ -909,6 +1084,360 @@ export async function buildServer() {
   await app.register(cors, { origin: corsOrigin, credentials: true });
 
   app.get("/health", async () => ({ ok: true }));
+
+  app.post("/auth/challenge", async (req, reply) => {
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const evmAddress = normalizeAddress(data.address);
+    if (!evmAddress) return reply.code(400).send({ error: "Valid EVM address is required" });
+
+    const nonce = randomTokenHex(16);
+    const expiresAt = new Date(Date.now() + USER_AUTH_CHALLENGE_TTL_SECONDS_DEFAULT * 1000);
+    const message = buildUserChallengeMessage({
+      purpose: "session",
+      evmAddress,
+      nonce,
+      expiresAt,
+    });
+    await prisma.infoFiUserAuthChallenge.create({
+      data: {
+        evmAddress,
+        nonce,
+        purpose: "session",
+        message,
+        expiresAt,
+      }
+    });
+    return reply.send({
+      challenge: {
+        nonce,
+        messageToSign: message,
+        expiresAt: expiresAt.toISOString(),
+      }
+    });
+  });
+
+  app.post("/auth/verify", async (req, reply) => {
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const evmAddress = normalizeAddress(data.address);
+    const nonce = typeof data.nonce === "string" ? data.nonce.trim() : "";
+    const signature = typeof data.signature === "string" ? data.signature.trim() : "";
+    if (!evmAddress || !nonce || !signature) {
+      return reply.code(400).send({ error: "Missing address, nonce, or signature" });
+    }
+
+    const verified = await verifyAndConsumeUserChallenge({
+      purpose: "session",
+      evmAddress,
+      nonce,
+      verify: async ({ message }) =>
+        await verifyMessage({
+          address: evmAddress as `0x${string}`,
+          message,
+          signature: signature as `0x${string}`
+        }),
+    });
+    if (!verified.ok) return reply.code(401).send({ error: verified.error });
+
+    const rawSessionToken = randomTokenHex(32);
+    const expiresAt = new Date(Date.now() + USER_SESSION_TTL_SECONDS_DEFAULT * 1000);
+    const tokenHash = sha256Hex(rawSessionToken);
+    await prisma.infoFiUserSession.create({
+      data: {
+        tokenHash,
+        evmAddress,
+        expiresAt,
+      }
+    });
+    await prisma.infoFiUserProfile.upsert({
+      where: { evmAddress },
+      create: { evmAddress },
+      update: {}
+    });
+    appendSetCookie(reply, buildSessionCookie(rawSessionToken, USER_SESSION_TTL_SECONDS_DEFAULT));
+    return reply.send({
+      session: {
+        authenticated: true,
+        evmAddress,
+        expiresAt: expiresAt.toISOString(),
+      }
+    });
+  });
+
+  app.get("/auth/session", async (req, reply) => {
+    const session = await readUserSession(req);
+    if (!session) {
+      appendSetCookie(reply, clearSessionCookie());
+      return reply.send({
+        session: {
+          authenticated: false,
+          evmAddress: null,
+          expiresAt: null,
+        }
+      });
+    }
+    return reply.send({
+      session: {
+        authenticated: true,
+        evmAddress: session.evmAddress,
+        expiresAt: session.expiresAt.toISOString(),
+      }
+    });
+  });
+
+  app.get("/user/profile", async (req, reply) => {
+    const session = await readUserSession(req);
+    if (!session) {
+      appendSetCookie(reply, clearSessionCookie());
+      return reply.send({
+        authenticated: false,
+        user: null,
+      });
+    }
+    const profile = await getUserProfileForAddress(session.evmAddress);
+    return reply.send({
+      authenticated: true,
+      user: profile
+        ? {
+            evmAddress: profile.evmAddress,
+            fastAddress: profile.fastAddress,
+            fastPublicKey: profile.fastPublicKey,
+            fastBoundAt: profile.fastBoundAt?.toISOString() ?? null,
+            updatedAt: profile.updatedAt.toISOString(),
+          }
+        : {
+            evmAddress: session.evmAddress,
+            fastAddress: null,
+            fastPublicKey: null,
+            fastBoundAt: null,
+            updatedAt: session.updatedAt.toISOString(),
+          },
+    });
+  });
+
+  app.post("/user/fast/challenge", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const fastAddress = normalizeFastAddressOrEmpty(data.address);
+    const fastPublicKey = typeof data.publicKey === "string" ? data.publicKey.trim().toLowerCase() : "";
+    if (!fastAddress) return reply.code(400).send({ error: "Valid FAST address is required" });
+    if (!FAST_PUBLIC_KEY_REGEX.test(fastPublicKey)) {
+      return reply.code(400).send({ error: "FAST public key must be 32-byte hex" });
+    }
+    if (publicKeyToFastAddress(fastPublicKey) !== fastAddress) {
+      return reply.code(400).send({ error: "FAST address does not match the public key" });
+    }
+
+    const nonce = randomTokenHex(16);
+    const expiresAt = new Date(Date.now() + USER_AUTH_CHALLENGE_TTL_SECONDS_DEFAULT * 1000);
+    const message = buildUserChallengeMessage({
+      purpose: "fast-bind",
+      evmAddress: session.evmAddress,
+      fastAddress,
+      fastPublicKey,
+      nonce,
+      expiresAt,
+    });
+    await prisma.infoFiUserAuthChallenge.create({
+      data: {
+        evmAddress: session.evmAddress,
+        nonce,
+        purpose: "fast-bind",
+        message,
+        fastAddress,
+        fastPublicKey,
+        expiresAt,
+      }
+    });
+    return reply.send({
+      challenge: {
+        nonce,
+        address: fastAddress,
+        publicKey: fastPublicKey,
+        messageToSign: message,
+        expiresAt: expiresAt.toISOString(),
+      }
+    });
+  });
+
+  app.post("/user/fast/bind", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const fastAddress = normalizeFastAddressOrEmpty(data.address);
+    const fastPublicKey = typeof data.publicKey === "string" ? data.publicKey.trim().toLowerCase() : "";
+    const nonce = typeof data.nonce === "string" ? data.nonce.trim() : "";
+    const signature = typeof data.signature === "string" ? data.signature.trim() : "";
+    const messageBytes = typeof data.messageBytes === "string" ? data.messageBytes.trim() : "";
+    if (!fastAddress || !FAST_PUBLIC_KEY_REGEX.test(fastPublicKey) || !nonce || !messageBytes || !FAST_SIGNATURE_HEX_REGEX.test(signature)) {
+      return reply.code(400).send({ error: "Missing or invalid FAST bind payload" });
+    }
+    if (publicKeyToFastAddress(fastPublicKey) !== fastAddress) {
+      return reply.code(400).send({ error: "FAST address does not match the public key" });
+    }
+
+    const verified = await verifyAndConsumeUserChallenge({
+      purpose: "fast-bind",
+      evmAddress: session.evmAddress,
+      nonce,
+      verify: async (challenge) => {
+        if (challenge.fastAddress !== fastAddress) return false;
+        if (challenge.fastPublicKey !== fastPublicKey) return false;
+        if (utf8ToHex(challenge.message) !== messageBytes.trim().toLowerCase()) return false;
+        return await verifyFastMessageSignature({
+          publicKeyHex: fastPublicKey,
+          signatureHex: signature,
+          messageBytesHex: messageBytes,
+        });
+      },
+    });
+    if (!verified.ok) return reply.code(401).send({ error: verified.error });
+
+    const profile = await prisma.infoFiUserProfile.upsert({
+      where: { evmAddress: session.evmAddress },
+      create: {
+        evmAddress: session.evmAddress,
+        fastAddress,
+        fastPublicKey,
+        fastBoundAt: new Date(),
+      },
+      update: {
+        fastAddress,
+        fastPublicKey,
+        fastBoundAt: new Date(),
+      }
+    });
+    return reply.send({
+      user: {
+        evmAddress: profile.evmAddress,
+        fastAddress: profile.fastAddress,
+        fastPublicKey: profile.fastPublicKey,
+        fastBoundAt: profile.fastBoundAt?.toISOString() ?? null,
+        updatedAt: profile.updatedAt.toISOString(),
+      }
+    });
+  });
+
+  app.get("/fast/config", async () => {
+    return {
+      config: {
+        treasuryAddress: await fastTreasuryAddress(),
+        tokenSymbol: FAST_SETTLEMENT_TOKEN_SYMBOL,
+        tokenDecimals: FAST_SETTLEMENT_TOKEN_DECIMALS,
+        tokenId: FAST_SETTLEMENT_TOKEN_ID_HEX,
+      }
+    };
+  });
+
+  function mapBaseRequest(request: any) {
+    return {
+      ...request,
+      rail: "BASE",
+      requesterFastAddress: null,
+    };
+  }
+
+  function mapFastRequest(request: any) {
+    return {
+      ...request,
+      rail: "FAST",
+      chainId: 0,
+      contractAddress: "",
+    };
+  }
+
+  function mapBaseOffer(offer: any) {
+    return {
+      ...offer,
+      rail: "BASE",
+      consultantFastAddress: null,
+      token: null,
+    };
+  }
+
+  function mapFastOffer(offer: any) {
+    return {
+      ...offer,
+      rail: "FAST",
+      consultantFastAddress: offer.consultantFastAddress,
+      chainId: 0,
+      contractAddress: "",
+      token: FAST_SETTLEMENT_TOKEN_SYMBOL,
+    };
+  }
+
+  function mapBaseJob(job: any) {
+    return {
+      ...job,
+      rail: "BASE",
+      status: infoFiJobStatus(job),
+      requesterFastAddress: null,
+      consultantFastAddress: null,
+    };
+  }
+
+  function mapFastJob(job: any) {
+    return {
+      ...job,
+      rail: "FAST",
+      chainId: 0,
+      contractAddress: "",
+    };
+  }
+
+  function mapFastTransfersToPayouts(jobId: string, transfers: any[]) {
+    return transfers
+      .filter((entry) => entry.direction === "PAYOUT" && entry.status === "COMPLETED")
+      .map((entry) => ({
+        id: entry.id,
+        jobId,
+        token: entry.paymentToken,
+        recipient: entry.toAddress,
+        amountWei: entry.amountWei,
+        txHash: entry.txHash || "",
+        logIndex: 0,
+        blockNumber: 0,
+        createdAt: entry.createdAt,
+      }));
+  }
+
+  function mapFastTransfersToRefunds(jobId: string, transfers: any[]) {
+    return transfers
+      .filter((entry) => entry.direction === "REFUND" && entry.status === "COMPLETED")
+      .map((entry) => ({
+        id: entry.id,
+        jobId,
+        token: entry.paymentToken,
+        funder: entry.toAddress,
+        amountWei: entry.amountWei,
+        txHash: entry.txHash || "",
+        logIndex: 0,
+        blockNumber: 0,
+        createdAt: entry.createdAt,
+      }));
+  }
+
+  function sortByUpdatedAtDesc<T extends { updatedAt: Date }>(rows: T[]) {
+    return [...rows].sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+  }
 
   app.post("/agents/setup/plan", async (req, reply) => {
     const body = parseBody(req.body as any);
@@ -1594,6 +2123,408 @@ export async function buildServer() {
     });
   });
 
+  async function executeFastTransferLedger(args: {
+    externalRef: string;
+    requestId?: string | null;
+    jobId?: string | null;
+    direction: "PAYOUT" | "REFUND";
+    fromAddress: string;
+    toAddress: string;
+    amountWei: string;
+  }) {
+    const existing = await prisma.infoFiFastTransfer.findUnique({ where: { externalRef: args.externalRef } });
+    if (existing?.status === "COMPLETED") return existing;
+    if (existing?.status === "PENDING") {
+      throw new Error(`FAST ${args.direction.toLowerCase()} is already pending.`);
+    }
+
+    const transfer =
+      existing ||
+      (await prisma.infoFiFastTransfer.create({
+        data: {
+          externalRef: args.externalRef,
+          requestId: args.requestId ?? null,
+          jobId: args.jobId ?? null,
+          direction: args.direction,
+          status: "PENDING",
+          paymentToken: FAST_SETTLEMENT_TOKEN_SYMBOL,
+          fromAddress: args.fromAddress,
+          toAddress: args.toAddress,
+          amountWei: args.amountWei,
+        }
+      }));
+
+    try {
+      const submitted = await submitFastTreasuryTransfer({
+        to: args.toAddress,
+        amountWei: args.amountWei,
+      });
+      return await prisma.infoFiFastTransfer.update({
+        where: { id: transfer.id },
+        data: {
+          status: "COMPLETED",
+          txHash: submitted.txHash,
+          nonce: submitted.nonce,
+          certificateJson: JSON.stringify(submitted.certificate),
+          errorMessage: null,
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await prisma.infoFiFastTransfer.updateMany({
+        where: { id: transfer.id },
+        data: {
+          status: "FAILED",
+          errorMessage: message.slice(0, 1000),
+        }
+      });
+      throw error;
+    }
+  }
+
+  app.post("/fast/requests", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const sourceURI = typeof data.sourceURI === "string" ? data.sourceURI.trim() : "";
+    const question = typeof data.question === "string" ? data.question.trim() : "";
+    const maxAmountWei = typeof data.maxAmountWei === "string" ? data.maxAmountWei.trim() : "";
+    const fundingCertificate = data.fundingCertificate as FastTransactionCertificate | undefined;
+    if (!sourceURI || !question || !/^\d+$/.test(maxAmountWei) || BigInt(maxAmountWei) <= 0n) {
+      return reply.code(400).send({ error: "Valid sourceURI, question, and maxAmountWei are required" });
+    }
+    if (!fundingCertificate || typeof fundingCertificate !== "object") {
+      return reply.code(400).send({ error: "Funding certificate is required" });
+    }
+
+    const profile = await requireFastBoundProfile(session.evmAddress).catch((error: unknown) => {
+      reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+    if (!profile) return;
+
+    const treasuryAddress = await fastTreasuryAddress();
+    const funding = await verifyFastFundingCertificate({
+      certificate: fundingCertificate,
+      expectedSender: profile.fastAddress!,
+      expectedRecipient: treasuryAddress,
+      expectedAmountWei: maxAmountWei,
+    }).catch((error: unknown) => {
+      reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+    if (!funding) return;
+
+    const reusedFunding = await prisma.infoFiFastTransfer.findFirst({
+      where: {
+        txHash: funding.txHash,
+        direction: "FUNDING",
+      }
+    });
+    if (reusedFunding) {
+      return reply.code(409).send({ error: "FAST funding transaction was already consumed by another request." });
+    }
+
+    const requestId = `fastreq_${randomTokenHex(10)}`;
+    const transferRef = `fast-request:${requestId}:funding`;
+    const created = await prisma.$transaction(async (tx) => {
+      const request = await tx.infoFiFastRequest.create({
+        data: {
+          requestId,
+          requester: session.evmAddress,
+          requesterFastAddress: profile.fastAddress!,
+          paymentToken: FAST_SETTLEMENT_TOKEN_SYMBOL,
+          maxAmountWei,
+          sourceURI,
+          question,
+          status: "OPEN",
+          fundingTxHash: funding.txHash,
+          fundingNonce: funding.nonce,
+          fundingCertificateJson: JSON.stringify(fundingCertificate),
+        }
+      });
+      await tx.infoFiFastTransfer.create({
+        data: {
+          externalRef: transferRef,
+          requestId,
+          direction: "FUNDING",
+          status: "COMPLETED",
+          paymentToken: FAST_SETTLEMENT_TOKEN_SYMBOL,
+          fromAddress: funding.senderAddress,
+          toAddress: funding.recipientAddress,
+          amountWei: maxAmountWei,
+          txHash: funding.txHash,
+          nonce: funding.nonce,
+          certificateJson: JSON.stringify(fundingCertificate),
+        }
+      });
+      return request;
+    });
+
+    return reply.code(201).send({ request: mapFastRequest(created) });
+  });
+
+  app.post("/fast/offers", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const requestId = typeof data.requestId === "string" ? data.requestId.trim().toLowerCase() : "";
+    const amountWei = typeof data.amountWei === "string" ? data.amountWei.trim() : "";
+    const etaSeconds = parsePositiveInt(data.etaSeconds, -1);
+    const proofType = typeof data.proofType === "string" ? data.proofType.trim() || "reputation-only" : "reputation-only";
+    if (!requestId || !/^\d+$/.test(amountWei) || BigInt(amountWei) <= 0n || etaSeconds <= 0) {
+      return reply.code(400).send({ error: "Valid requestId, amountWei, and etaSeconds are required" });
+    }
+
+    const request = await prisma.infoFiFastRequest.findUnique({ where: { requestId } });
+    if (!request) return reply.code(404).send({ error: "FAST request not found" });
+    if (request.status !== "OPEN") return reply.code(409).send({ error: "FAST request is not open for offers" });
+
+    const profile = await requireFastBoundProfile(session.evmAddress).catch((error: unknown) => {
+      reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+    if (!profile) return;
+
+    const offer = await prisma.infoFiFastOffer.create({
+        data: {
+          offerId: `fastoffer_${randomTokenHex(10)}`,
+          requestId: request.requestId,
+          consultant: session.evmAddress,
+          consultantFastAddress: profile.fastAddress!,
+        amountWei,
+        etaSeconds,
+        proofType,
+        status: "OPEN",
+      }
+    });
+    return reply.code(201).send({ offer: mapFastOffer(offer) });
+  });
+
+  app.post("/fast/offers/:offerId/hire", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+    const params = req.params as { offerId?: string };
+    const offerId = typeof params.offerId === "string" ? params.offerId.trim().toLowerCase() : "";
+    if (!offerId) return reply.code(400).send({ error: "Missing offerId" });
+
+    const offer = await prisma.infoFiFastOffer.findUnique({ where: { offerId } });
+    if (!offer) return reply.code(404).send({ error: "FAST offer not found" });
+    if (offer.status !== "OPEN") return reply.code(409).send({ error: "FAST offer is not open" });
+
+    const request = await prisma.infoFiFastRequest.findUnique({ where: { requestId: offer.requestId } });
+    if (!request) return reply.code(404).send({ error: "FAST request not found" });
+    if (request.requester !== session.evmAddress) return reply.code(403).send({ error: "Only the requester can hire this FAST offer" });
+    if (request.status !== "OPEN") return reply.code(409).send({ error: "FAST request is not open" });
+
+    const job = await prisma.$transaction(async (tx) => {
+      const created = await tx.infoFiFastJob.create({
+        data: {
+          jobId: `fastjob_${randomTokenHex(10)}`,
+          requestId: request.requestId,
+          offerId: offer.offerId,
+          requester: request.requester,
+          requesterFastAddress: request.requesterFastAddress,
+          consultant: offer.consultant,
+          consultantFastAddress: offer.consultantFastAddress,
+          paymentToken: FAST_SETTLEMENT_TOKEN_SYMBOL,
+          amountWei: offer.amountWei,
+          remainingWei: request.maxAmountWei,
+          status: "HIRED",
+          hiredAt: new Date(),
+        }
+      });
+      await tx.infoFiFastRequest.update({
+        where: { requestId: request.requestId },
+        data: {
+          status: "HIRED",
+          hiredOfferId: offer.offerId,
+        }
+      });
+      await tx.infoFiFastOffer.update({
+        where: { offerId: offer.offerId },
+        data: { status: "HIRED" }
+      });
+      await tx.infoFiFastOffer.updateMany({
+        where: {
+          requestId: request.requestId,
+          offerId: { not: offer.offerId },
+          status: "OPEN",
+        },
+        data: { status: "CLOSED" }
+      });
+      return created;
+    });
+
+    return reply.code(200).send({ job: mapFastJob(job) });
+  });
+
+  app.post("/fast/jobs/:jobId/deliver", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+
+    const params = req.params as { jobId?: string };
+    const jobId = typeof params.jobId === "string" ? params.jobId.trim().toLowerCase() : "";
+    if (!jobId) return reply.code(400).send({ error: "Missing jobId" });
+
+    const body = parseBody(req.body as any);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "Invalid JSON body" });
+    }
+    const data = body as Record<string, unknown>;
+    const digestHash = typeof data.digestHash === "string" ? data.digestHash.trim().toLowerCase() : "";
+    const metadataURI = typeof data.metadataURI === "string" ? data.metadataURI.trim() : "";
+    const proofTypeOrURI = typeof data.proofTypeOrURI === "string" ? data.proofTypeOrURI.trim() : "";
+    if (!digestHash || !metadataURI) {
+      return reply.code(400).send({ error: "digestHash and metadataURI are required" });
+    }
+
+    const job = await prisma.infoFiFastJob.findUnique({ where: { jobId } });
+    if (!job) return reply.code(404).send({ error: "FAST job not found" });
+    if (job.consultant !== session.evmAddress) return reply.code(403).send({ error: "Only the consultant can deliver this FAST job" });
+    if (job.status !== "HIRED") return reply.code(409).send({ error: "FAST job is not ready for delivery" });
+
+    const updated = await prisma.infoFiFastJob.update({
+      where: { jobId },
+      data: {
+        digestHash,
+        metadataURI,
+        proofTypeOrURI: proofTypeOrURI || "reputation-only",
+        deliveredAt: new Date(),
+        status: "DELIVERED",
+      }
+    });
+    return reply.send({ job: mapFastJob(updated) });
+  });
+
+  app.post("/fast/jobs/:jobId/accept", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+    const params = req.params as { jobId?: string };
+    const jobId = typeof params.jobId === "string" ? params.jobId.trim().toLowerCase() : "";
+    if (!jobId) return reply.code(400).send({ error: "Missing jobId" });
+
+    const job = await prisma.infoFiFastJob.findUnique({ where: { jobId } });
+    if (!job) return reply.code(404).send({ error: "FAST job not found" });
+    if (job.requester !== session.evmAddress) return reply.code(403).send({ error: "Only the requester can accept this FAST job" });
+    if (job.status === "CLOSED") return reply.send({ job: mapFastJob(job) });
+    if (job.status !== "DELIVERED") return reply.code(409).send({ error: "FAST job is not delivered yet" });
+
+    const payoutWei = BigInt(job.amountWei);
+    const remainingWei = BigInt(job.remainingWei);
+    if (remainingWei < payoutWei) {
+      return reply.code(409).send({ error: "FAST job remaining balance is below payout amount" });
+    }
+    const refundWei = remainingWei - payoutWei;
+    const treasuryAddress = await fastTreasuryAddress();
+
+    try {
+      await executeFastTransferLedger({
+        externalRef: `fast-job:${job.jobId}:payout`,
+        requestId: job.requestId,
+        jobId: job.jobId,
+        direction: "PAYOUT",
+        fromAddress: treasuryAddress,
+        toAddress: job.consultantFastAddress,
+        amountWei: payoutWei.toString(),
+      });
+      if (refundWei > 0n) {
+        await executeFastTransferLedger({
+          externalRef: `fast-job:${job.jobId}:refund`,
+          requestId: job.requestId,
+          jobId: job.jobId,
+          direction: "REFUND",
+          fromAddress: treasuryAddress,
+          toAddress: job.requesterFastAddress,
+          amountWei: refundWei.toString(),
+        });
+      }
+    } catch (error) {
+      return reply.code(502).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.infoFiFastJob.update({
+        where: { jobId: job.jobId },
+        data: {
+          remainingWei: "0",
+          status: "CLOSED",
+          closedAt: new Date(),
+        }
+      });
+      await tx.infoFiFastRequest.update({
+        where: { requestId: job.requestId },
+        data: { status: "CLOSED" }
+      });
+      await tx.infoFiFastOffer.update({
+        where: { offerId: job.offerId },
+        data: { status: "CLOSED" }
+      });
+      return next;
+    });
+    return reply.send({ job: mapFastJob(updated) });
+  });
+
+  app.post("/fast/jobs/:jobId/refund", async (req, reply) => {
+    const session = await requireUserSession(req, reply);
+    if (!session) return;
+    const params = req.params as { jobId?: string };
+    const jobId = typeof params.jobId === "string" ? params.jobId.trim().toLowerCase() : "";
+    if (!jobId) return reply.code(400).send({ error: "Missing jobId" });
+
+    const job = await prisma.infoFiFastJob.findUnique({ where: { jobId } });
+    if (!job) return reply.code(404).send({ error: "FAST job not found" });
+    if (job.requester !== session.evmAddress) return reply.code(403).send({ error: "Only the requester can refund this FAST job" });
+    if (job.status === "CLOSED") return reply.send({ job: mapFastJob(job) });
+    if (job.deliveredAt) return reply.code(409).send({ error: "FAST job cannot be refunded after delivery" });
+
+    const treasuryAddress = await fastTreasuryAddress();
+    try {
+      await executeFastTransferLedger({
+        externalRef: `fast-job:${job.jobId}:refund`,
+        requestId: job.requestId,
+        jobId: job.jobId,
+        direction: "REFUND",
+        fromAddress: treasuryAddress,
+        toAddress: job.requesterFastAddress,
+        amountWei: job.remainingWei,
+      });
+    } catch (error) {
+      return reply.code(502).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const next = await tx.infoFiFastJob.update({
+        where: { jobId: job.jobId },
+        data: {
+          remainingWei: "0",
+          status: "CLOSED",
+          closedAt: new Date(),
+        }
+      });
+      await tx.infoFiFastRequest.update({
+        where: { requestId: job.requestId },
+        data: { status: "CLOSED" }
+      });
+      await tx.infoFiFastOffer.update({
+        where: { offerId: job.offerId },
+        data: { status: "CLOSED" }
+      });
+      return next;
+    });
+    return reply.send({ job: mapFastJob(updated) });
+  });
+
   app.get("/requests", async (req) => {
     const q = req.query as { requestId?: string; requester?: string; status?: string; take?: string };
     const where: any = { ...scopedWhere() };
@@ -1604,15 +2535,29 @@ export async function buildServer() {
       const request = await prisma.infoFiRequest.findFirst({
         where: { ...where, requestId: q.requestId.toLowerCase() }
       });
-      if (!request) return { request: null };
-      const offers = await prisma.infoFiOffer.findMany({
-        where: { ...scopedWhere(), requestId: request.requestId },
+      if (request) {
+        const offers = await prisma.infoFiOffer.findMany({
+          where: { ...scopedWhere(), requestId: request.requestId },
+          orderBy: { createdAt: "asc" }
+        });
+        const job = await prisma.infoFiJob.findFirst({
+          where: { ...scopedWhere(), requestId: request.requestId }
+        });
+        return { request: { ...mapBaseRequest(request), offers: offers.map(mapBaseOffer), job: job ? mapBaseJob(job) : null } };
+      }
+
+      const fastRequest = await prisma.infoFiFastRequest.findUnique({
+        where: { requestId: q.requestId.toLowerCase() }
+      });
+      if (!fastRequest) return { request: null };
+      const offers = await prisma.infoFiFastOffer.findMany({
+        where: { requestId: fastRequest.requestId },
         orderBy: { createdAt: "asc" }
       });
-      const job = await prisma.infoFiJob.findFirst({
-        where: { ...scopedWhere(), requestId: request.requestId }
+      const job = await prisma.infoFiFastJob.findUnique({
+        where: { requestId: fastRequest.requestId }
       });
-      return { request: { ...request, offers, job } };
+      return { request: { ...mapFastRequest(fastRequest), offers: offers.map(mapFastOffer), job: job ? mapFastJob(job) : null } };
     }
 
     const take = Math.min(Math.max(Number(q.take || "200"), 1), 500);
@@ -1621,7 +2566,19 @@ export async function buildServer() {
       orderBy: { updatedAt: "desc" },
       take
     });
-    return { requests };
+    const fastWhere: any = {};
+    if (q.requester) fastWhere.requester = q.requester.toLowerCase();
+    if (q.status) fastWhere.status = q.status.toUpperCase();
+    const fastRequests = await prisma.infoFiFastRequest.findMany({
+      where: fastWhere,
+      orderBy: { updatedAt: "desc" },
+      take
+    });
+    const combined = sortByUpdatedAtDesc([
+      ...requests.map(mapBaseRequest),
+      ...fastRequests.map(mapFastRequest),
+    ]).slice(0, take);
+    return { requests: combined };
   });
 
   app.get("/offers", async (req) => {
@@ -1635,7 +2592,11 @@ export async function buildServer() {
       const offer = await prisma.infoFiOffer.findFirst({
         where: { ...where, offerId: q.offerId.toLowerCase() }
       });
-      return { offer };
+      if (offer) return { offer: mapBaseOffer(offer) };
+      const fastOffer = await prisma.infoFiFastOffer.findUnique({
+        where: { offerId: q.offerId.toLowerCase() }
+      });
+      return { offer: fastOffer ? mapFastOffer(fastOffer) : null };
     }
 
     const take = Math.min(Math.max(Number(q.take || "200"), 1), 500);
@@ -1644,7 +2605,20 @@ export async function buildServer() {
       orderBy: { updatedAt: "desc" },
       take
     });
-    return { offers };
+    const fastWhere: any = {};
+    if (q.requestId) fastWhere.requestId = q.requestId.toLowerCase();
+    if (q.consultant) fastWhere.consultant = q.consultant.toLowerCase();
+    if (q.status) fastWhere.status = q.status.toUpperCase();
+    const fastOffers = await prisma.infoFiFastOffer.findMany({
+      where: fastWhere,
+      orderBy: { updatedAt: "desc" },
+      take
+    });
+    const combined = sortByUpdatedAtDesc([
+      ...offers.map(mapBaseOffer),
+      ...fastOffers.map(mapFastOffer),
+    ]).slice(0, take);
+    return { offers: combined };
   });
 
   app.get("/jobs", async (req) => {
@@ -1665,12 +2639,31 @@ export async function buildServer() {
       const job = await prisma.infoFiJob.findFirst({
         where: { ...where, jobId: q.jobId.toLowerCase() }
       });
-      if (!job) return { job: null };
-      const payouts = await prisma.infoFiPayout.findMany({ where: { jobId: job.jobId }, orderBy: { createdAt: "asc" } });
-      const refunds = await prisma.infoFiRefund.findMany({ where: { jobId: job.jobId }, orderBy: { createdAt: "asc" } });
-      const ratings = await prisma.infoFiRating.findMany({ where: { jobId: job.jobId }, orderBy: { createdAt: "asc" } });
-      const digest = await prisma.infoFiDigest.findFirst({ where: { jobId: job.jobId }, orderBy: { createdAt: "desc" } });
-      return { job: { ...job, status: infoFiJobStatus(job), payouts, refunds, ratings, digest } };
+      if (job) {
+        const payouts = await prisma.infoFiPayout.findMany({ where: { jobId: job.jobId }, orderBy: { createdAt: "asc" } });
+        const refunds = await prisma.infoFiRefund.findMany({ where: { jobId: job.jobId }, orderBy: { createdAt: "asc" } });
+        const ratings = await prisma.infoFiRating.findMany({ where: { jobId: job.jobId }, orderBy: { createdAt: "asc" } });
+        const digest = await prisma.infoFiDigest.findFirst({ where: { jobId: job.jobId }, orderBy: { createdAt: "desc" } });
+        return { job: { ...mapBaseJob(job), payouts, refunds, ratings, digest } };
+      }
+
+      const fastJob = await prisma.infoFiFastJob.findUnique({
+        where: { jobId: q.jobId.toLowerCase() }
+      });
+      if (!fastJob) return { job: null };
+      const [transfers, digest] = await Promise.all([
+        prisma.infoFiFastTransfer.findMany({ where: { jobId: fastJob.jobId }, orderBy: { createdAt: "asc" } }),
+        prisma.infoFiDigest.findFirst({ where: { jobId: fastJob.jobId }, orderBy: { createdAt: "desc" } }),
+      ]);
+      return {
+        job: {
+          ...mapFastJob(fastJob),
+          payouts: mapFastTransfersToPayouts(fastJob.jobId, transfers),
+          refunds: mapFastTransfersToRefunds(fastJob.jobId, transfers),
+          ratings: [],
+          digest,
+        }
+      };
     }
 
     const take = Math.min(Math.max(Number(q.take || "200"), 1), 500);
@@ -1679,10 +2672,23 @@ export async function buildServer() {
       orderBy: { updatedAt: "desc" },
       take
     });
+    const fastWhere: any = {};
+    if (q.requestId) fastWhere.requestId = q.requestId.toLowerCase();
+    if (q.requester) fastWhere.requester = q.requester.toLowerCase();
+    if (q.consultant) fastWhere.consultant = q.consultant.toLowerCase();
+    if (q.status) fastWhere.status = q.status.toUpperCase();
+    const fastJobs = await prisma.infoFiFastJob.findMany({
+      where: fastWhere,
+      orderBy: { updatedAt: "desc" },
+      take
+    });
     const statusQuery = q.status ? q.status.toUpperCase() : "";
-    const result = jobs
-      .map((job) => ({ ...job, status: infoFiJobStatus(job) }))
-      .filter((job) => (statusQuery ? job.status === statusQuery : true));
+    const result = sortByUpdatedAtDesc([
+      ...jobs.map(mapBaseJob),
+      ...fastJobs.map(mapFastJob),
+    ])
+      .filter((job) => (statusQuery ? job.status === statusQuery : true))
+      .slice(0, take);
     return { jobs: result };
   });
 

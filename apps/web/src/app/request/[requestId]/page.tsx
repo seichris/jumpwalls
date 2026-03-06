@@ -5,15 +5,17 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import type { Address, Hex } from "viem";
 
+import { AccountRailControls } from "@/components/infofi/account-rail-controls";
 import { BrandLockIcon } from "@/components/infofi/brand-lock-icon";
 import { PostOfferDialog } from "@/components/infofi/post-offer-dialog";
-import { PrivyConnectWalletButton } from "@/components/infofi/privy-connect-wallet-button";
+import { RailBadge } from "@/components/infofi/rail-badge";
+import { useUserRail } from "@/components/providers/user-rail-provider";
 import { UpdateRequestMaxDialog } from "@/components/infofi/update-request-max-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getDomainSummary, getRequestById } from "@/lib/api";
+import { getDomainSummary, getRequestById, hireFastOffer } from "@/lib/api";
 import { assertSupportedToken, deriveJobId, formatAmount, hireOfferEthTx, hireOfferTokenTx, isEthToken, readRequestOnchain, tokenSymbol } from "@/lib/infofi-contract";
 import { copyText, logUiAction } from "@/lib/infofi-ux";
 import type { InfoFiDomainPresenceSummary, InfoFiOffer, InfoFiRequestWithDetails } from "@/lib/infofi-types";
@@ -107,6 +109,7 @@ function maxAmountWeiByTokenForRequest(request: InfoFiRequestWithDetails): Recor
 export default function RequestDetailPage() {
   const params = useParams<{ requestId: string }>();
   const router = useRouter();
+  const { activeRail, ensureRail } = useUserRail();
   const requestId = (params?.requestId || "").toLowerCase();
   const expectedChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
   const {
@@ -142,6 +145,9 @@ export default function RequestDetailPage() {
   const privyEnabled = isPrivyFeatureEnabled();
   const privyChainSupported = isPrivyFundingSupportedChain(expectedChainId);
   const privySupportedChainsLabel = Array.from(privyFundingSupportedChainIds()).join(", ");
+  const requestIsFast = data?.rail === "FAST";
+  const actionsBlockedByChain = !requestIsFast && wrongChain;
+  const showSwitchChain = wrongChain && (data ? data.rail === "BASE" : activeRail === "BASE");
 
   React.useEffect(() => {
     if (!privyEnabled) return;
@@ -168,7 +174,7 @@ export default function RequestDetailPage() {
         setDomainSummary(null);
       }
       setLagWarning(null);
-      if (request) {
+      if (request && request.rail === "BASE") {
         try {
           const onchain = await readRequestOnchain(request.requestId as Hex);
           if (!onchain) {
@@ -210,6 +216,13 @@ export default function RequestDetailPage() {
     setActionError(null);
     setHiringOfferId(offer.offerId);
     try {
+      if (data.rail === "FAST") {
+        await ensureRail("FAST");
+        const job = await hireFastOffer(offer.offerId);
+        router.push(`/job/${job.jobId}`);
+        return;
+      }
+
       const overBudget = BigInt(offer.amountWei) > BigInt(data.maxAmountWei);
       if (overBudget) {
         setSuggestedNewMaxWei(offer.amountWei);
@@ -249,7 +262,7 @@ export default function RequestDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           {privyEnabled ? (
-            <PrivyConnectWalletButton
+            <AccountRailControls
               expectedChainId={expectedChainId}
               walletAddress={address}
               walletChainId={chainId}
@@ -293,10 +306,10 @@ export default function RequestDetailPage() {
             />
           ) : null}
           {!privyEnabled && !hasProvider ? <Badge variant="warning">No Wallet Provider</Badge> : null}
-          {wrongChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
+          {showSwitchChain ? <Button variant="destructive" onClick={() => switchChain(expectedChainId)}>Switch Chain</Button> : null}
           <Button variant="outline" onClick={() => fetchRequest()}>Refresh</Button>
           {data && data.status.toUpperCase() === "OPEN" ? (
-            <Button onClick={() => setOpenPostOffer(true)} disabled={!address || wrongChain}>
+            <Button onClick={() => setOpenPostOffer(true)} disabled={!address || actionsBlockedByChain}>
               Post Offer
             </Button>
           ) : null}
@@ -349,6 +362,7 @@ export default function RequestDetailPage() {
         <>
           <section className="rounded-lg border p-4">
             <div className="mb-2 flex flex-wrap items-center gap-2">
+              <RailBadge rail={data.rail} />
               <Badge variant={statusVariant(data.status)}>{data.status}</Badge>
               <span className="font-mono text-xs text-muted-foreground">{data.requestId}</span>
               <Button
@@ -412,7 +426,7 @@ export default function RequestDetailPage() {
                 </div>
               </div>
             ) : null}
-            {isRequester && data.status.toUpperCase() === "OPEN" ? (
+            {isRequester && data.status.toUpperCase() === "OPEN" && data.rail === "BASE" ? (
               <div className="mt-3">
                 <Button
                   size="sm"
@@ -421,7 +435,7 @@ export default function RequestDetailPage() {
                     setSuggestedNewMaxWei(null);
                     setOpenUpdateMax(true);
                   }}
-                  disabled={!address || wrongChain}
+                  disabled={!address || actionsBlockedByChain}
                 >
                   Increase Budget
                 </Button>
@@ -430,7 +444,7 @@ export default function RequestDetailPage() {
             {data.job ? (
               <div className="mt-4">
                 <Button asChild>
-                  <Link href={`/job/${deriveJobId(data.hiredOfferId as Hex, data.requester as Address)}`}>Open Job</Link>
+                  <Link href={`/job/${data.job.jobId}`}>Open Job</Link>
                 </Button>
               </div>
             ) : null}
@@ -465,7 +479,12 @@ export default function RequestDetailPage() {
                     return (
                       <TableRow key={offer.offerId}>
                         <TableCell className="font-mono text-xs">{shortHash(offer.offerId)}</TableCell>
-                        <TableCell className="font-mono text-xs">{shortHash(offer.consultant)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <RailBadge rail={offer.rail} />
+                            <span className="font-mono text-xs">{shortHash(offer.consultant)}</span>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right font-mono text-xs">
                           {formatAmount(data.paymentToken, offer.amountWei)}
                           {overBudget ? (
@@ -482,7 +501,7 @@ export default function RequestDetailPage() {
                             <Button
                               size="sm"
                               onClick={() => hireOffer(offer)}
-                              disabled={Boolean(hiringOfferId) || wrongChain}
+                              disabled={Boolean(hiringOfferId) || actionsBlockedByChain}
                             >
                               {hiringOfferId === offer.offerId ? "Hiring..." : "Hire"}
                             </Button>

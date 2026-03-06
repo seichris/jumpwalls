@@ -66,12 +66,14 @@ function WalletIdenticon({ address }: { address: string }) {
   );
 }
 
-type PrivyConnectWalletButtonProps = {
+export type PrivyConnectWalletButtonProps = {
   expectedChainId?: number;
   walletAddress?: Address | null;
   walletChainId?: number | null;
   onFundingOutcome?: (outcome: PrivyFundingOutcome) => void;
 };
+
+export type { PrivyFundingOutcome };
 
 export function PrivyConnectWalletButton({ expectedChainId, walletAddress, walletChainId, onFundingOutcome }: PrivyConnectWalletButtonProps) {
   const { ready, authenticated, login, connectWallet } = usePrivy();

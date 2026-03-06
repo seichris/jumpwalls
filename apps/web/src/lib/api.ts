@@ -2,12 +2,15 @@ import type {
   InfoFiDigest,
   InfoFiDomainPresenceRow,
   InfoFiDomainPresenceSummary,
+  InfoFiAuthSession,
   InfoFiJob,
   InfoFiJobWithDetails,
   InfoFiOffer,
   InfoFiReimbursementPreview,
   InfoFiRequest,
   InfoFiRequestWithDetails,
+  InfoFiUserProfile,
+  InfoFiUserProfileResponse,
 } from "./infofi-types";
 
 export type InfoFiAgentIdentity = {
@@ -260,4 +263,157 @@ export async function getAgentIdentity(agentAddress: string): Promise<InfoFiAgen
     displayName: typeof data.agent.profile?.displayName === "string" ? data.agent.profile.displayName : null,
     clientVersion: typeof data.agent.heartbeat?.clientVersion === "string" ? data.agent.heartbeat.clientVersion : null,
   };
+}
+
+export async function createUserAuthChallenge(address: string): Promise<{ nonce: string; messageToSign: string; expiresAt: string }> {
+  const response = await fetch(`${apiBase()}/auth/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ address }),
+  });
+  const data = await parseResponse<{ challenge: { nonce: string; messageToSign: string; expiresAt: string } }>(response);
+  return data.challenge;
+}
+
+export async function verifyUserAuthChallenge(input: { address: string; nonce: string; signature: string }) {
+  const response = await fetch(`${apiBase()}/auth/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ session: InfoFiAuthSession }>(response);
+  return data.session;
+}
+
+export async function getAuthSession() {
+  const response = await fetch(`${apiBase()}/auth/session`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await parseResponse<{ session: InfoFiAuthSession }>(response);
+  return data.session;
+}
+
+export async function getUserProfile() {
+  const response = await fetch(`${apiBase()}/user/profile`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  return await parseResponse<InfoFiUserProfileResponse>(response);
+}
+
+export async function createFastBindChallenge(input: { address: string; publicKey: string }) {
+  const response = await fetch(`${apiBase()}/user/fast/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{
+    challenge: { nonce: string; address: string; publicKey: string; messageToSign: string; expiresAt: string };
+  }>(response);
+  return data.challenge;
+}
+
+export async function bindFastWallet(input: {
+  address: string;
+  publicKey: string;
+  nonce: string;
+  signature: string;
+  messageBytes: string;
+}) {
+  const response = await fetch(`${apiBase()}/user/fast/bind`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ user: InfoFiUserProfile }>(response);
+  return data.user;
+}
+
+export async function createFastRequest(input: {
+  sourceURI: string;
+  question: string;
+  maxAmountWei: string;
+  fundingCertificate: unknown;
+}) {
+  const response = await fetch(`${apiBase()}/fast/requests`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ request: InfoFiRequest }>(response);
+  return data.request;
+}
+
+export async function getFastConfig() {
+  const response = await fetch(`${apiBase()}/fast/config`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await parseResponse<{ config: { treasuryAddress: string } }>(response);
+  return data.config;
+}
+
+export async function createFastOffer(input: {
+  requestId: string;
+  amountWei: string;
+  etaSeconds: number;
+  proofType: string;
+}) {
+  const response = await fetch(`${apiBase()}/fast/offers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ offer: InfoFiOffer }>(response);
+  return data.offer;
+}
+
+export async function hireFastOffer(offerId: string) {
+  const response = await fetch(`${apiBase()}/fast/offers/${encodeURIComponent(offerId)}/hire`, {
+    method: "POST",
+    credentials: "include",
+  });
+  const data = await parseResponse<{ job: InfoFiJob }>(response);
+  return data.job;
+}
+
+export async function deliverFastJob(input: {
+  jobId: string;
+  digestHash: string;
+  metadataURI: string;
+  proofTypeOrURI: string;
+}) {
+  const response = await fetch(`${apiBase()}/fast/jobs/${encodeURIComponent(input.jobId)}/deliver`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  const data = await parseResponse<{ job: InfoFiJob }>(response);
+  return data.job;
+}
+
+export async function acceptFastJob(jobId: string) {
+  const response = await fetch(`${apiBase()}/fast/jobs/${encodeURIComponent(jobId)}/accept`, {
+    method: "POST",
+    credentials: "include",
+  });
+  const data = await parseResponse<{ job: InfoFiJob }>(response);
+  return data.job;
+}
+
+export async function refundFastJob(jobId: string) {
+  const response = await fetch(`${apiBase()}/fast/jobs/${encodeURIComponent(jobId)}/refund`, {
+    method: "POST",
+    credentials: "include",
+  });
+  const data = await parseResponse<{ job: InfoFiJob }>(response);
+  return data.job;
 }

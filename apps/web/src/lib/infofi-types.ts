@@ -1,7 +1,11 @@
+export type InfoFiRail = "BASE" | "FAST";
+
 export type InfoFiRequest = {
   id: string;
   requestId: string;
+  rail: InfoFiRail;
   requester: string;
+  requesterFastAddress?: string | null;
   paymentToken: string;
   maxAmountWei: string;
   sourceURI: string;
@@ -17,8 +21,11 @@ export type InfoFiRequest = {
 export type InfoFiOffer = {
   id: string;
   offerId: string;
+  rail: InfoFiRail;
   requestId: string;
   consultant: string;
+  consultantFastAddress?: string | null;
+  token?: string | null;
   amountWei: string;
   etaSeconds: number;
   proofType: string;
@@ -139,10 +146,13 @@ export type InfoFiReimbursementPreview = {
 export type InfoFiJobBase = {
   id: string;
   jobId: string;
+  rail: InfoFiRail;
   requestId: string;
   offerId: string;
   requester: string;
+  requesterFastAddress?: string | null;
   consultant: string;
+  consultantFastAddress?: string | null;
   paymentToken: string;
   amountWei: string;
   remainingWei: string;
@@ -188,3 +198,22 @@ export type InfoFiDomainPresenceRow = {
 };
 
 export type InfoFiDomainPresenceSummary = InfoFiDomainPresenceRow;
+
+export type InfoFiUserProfile = {
+  evmAddress: string;
+  fastAddress: string | null;
+  fastPublicKey: string | null;
+  fastBoundAt: string | null;
+  updatedAt: string;
+};
+
+export type InfoFiUserProfileResponse = {
+  authenticated: boolean;
+  user: InfoFiUserProfile | null;
+};
+
+export type InfoFiAuthSession = {
+  authenticated: boolean;
+  evmAddress: string | null;
+  expiresAt: string | null;
+};

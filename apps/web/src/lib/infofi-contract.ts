@@ -4,6 +4,8 @@ import { erc20Abi, infoFiAbi } from "./abi";
 import { ensureWalletChain, getConfig, getPublicClient, getWalletClient } from "./wallet";
 
 export const ETH_TOKEN = "0x0000000000000000000000000000000000000000";
+export const FAST_SETTLEMENT_TOKEN = "SETUSDC";
+export const LEGACY_FAST_TOKEN = "FAST";
 
 export function chainIdFromEnv() {
   return Number(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
@@ -18,6 +20,9 @@ export function isEthToken(token: string) {
 }
 
 export function tokenDecimals(token: string) {
+  const upper = token.trim().toUpperCase();
+  if (upper === FAST_SETTLEMENT_TOKEN) return 6;
+  if (upper === LEGACY_FAST_TOKEN) return 18;
   const usdc = usdcForChain();
   if (isEthToken(token)) return 18;
   if (usdc && token.toLowerCase() === usdc.toLowerCase()) return 6;
@@ -25,6 +30,9 @@ export function tokenDecimals(token: string) {
 }
 
 export function tokenSymbol(token: string) {
+  const upper = token.trim().toUpperCase();
+  if (upper === FAST_SETTLEMENT_TOKEN) return FAST_SETTLEMENT_TOKEN;
+  if (upper === LEGACY_FAST_TOKEN) return LEGACY_FAST_TOKEN;
   const usdc = usdcForChain();
   if (isEthToken(token)) return "ETH";
   if (usdc && token.toLowerCase() === usdc.toLowerCase()) return "USDC";
@@ -38,6 +46,9 @@ export function formatAmount(token: string, amountWei: string | bigint) {
 
 export function parseAmount(token: string, amount: string) {
   if (!amount || Number(amount) <= 0) throw new Error("Invalid amount");
+  const upper = token.trim().toUpperCase();
+  if (upper === FAST_SETTLEMENT_TOKEN) return parseUnits(amount, 6);
+  if (upper === LEGACY_FAST_TOKEN) return parseUnits(amount, 18);
   if (isEthToken(token)) return parseEther(amount);
   return parseUnits(amount, tokenDecimals(token));
 }
