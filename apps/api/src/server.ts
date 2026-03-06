@@ -178,14 +178,16 @@ export async function buildServer() {
     reply.header("set-cookie", [String(current), cookie]);
   }
 
-  function buildSessionCookie(value: string, maxAgeSeconds: number) {
-    const secure = webOrigin.startsWith("https://") ? "; Secure" : "";
-    return `${USER_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+  function buildSessionCookie(req: FastifyRequest, value: string, maxAgeSeconds: number) {
+    const policy = sessionCookiePolicy(req);
+    const secure = policy.secure ? "; Secure" : "";
+    return `${USER_SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=${policy.sameSite}; Max-Age=${maxAgeSeconds}${secure}`;
   }
 
-  function clearSessionCookie() {
-    const secure = webOrigin.startsWith("https://") ? "; Secure" : "";
-    return `${USER_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+  function clearSessionCookie(req: FastifyRequest) {
+    const policy = sessionCookiePolicy(req);
+    const secure = policy.secure ? "; Secure" : "";
+    return `${USER_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${policy.sameSite}; Max-Age=0${secure}`;
   }
 
   function parseNonNegativeInt(value: unknown, fallback: number) {
@@ -319,6 +321,53 @@ export async function buildServer() {
   function isIpLikeHost(hostname: string) {
     if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return true;
     return hostname.includes(":");
+  }
+
+  function isLocalHost(hostname: string) {
+    const normalized = hostname.trim().toLowerCase();
+    return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+  }
+
+  function siteKeyForOrigin(origin: string) {
+    try {
+      const parsed = new URL(origin);
+      const host = parsed.hostname.trim().toLowerCase();
+      if (!host) return "";
+      if (isLocalHost(host) || isIpLikeHost(host)) return `${parsed.protocol}//${host}`;
+      const labels = host.split(".").filter(Boolean);
+      const siteHost = labels.length >= 2 ? labels.slice(-2).join(".") : host;
+      return `${parsed.protocol}//${siteHost}`;
+    } catch {
+      return "";
+    }
+  }
+
+  function inferApiOrigin(req: FastifyRequest) {
+    const forwardedHost = readHeaderString(req.headers["x-forwarded-host"]).split(",")[0]?.trim() || "";
+    const host = forwardedHost || readHeaderString(req.headers.host);
+    if (!host) return "";
+    const forwardedProto = readHeaderString(req.headers["x-forwarded-proto"]).split(",")[0]?.trim().toLowerCase();
+    const requestOrigin = normalizeAllowedOrigin(readHeaderString(req.headers.origin));
+    const protocol =
+      forwardedProto === "https" || forwardedProto === "http"
+        ? forwardedProto
+        : requestOrigin.startsWith("https://")
+          ? "https"
+          : "http";
+    return normalizeAllowedOrigin(`${protocol}://${host}`) || "";
+  }
+
+  function sessionCookiePolicy(req: FastifyRequest) {
+    const requestOrigin = normalizeAllowedOrigin(readHeaderString(req.headers.origin));
+    const apiOrigin = inferApiOrigin(req);
+    const requestSite = requestOrigin ? siteKeyForOrigin(requestOrigin) : "";
+    const apiSite = apiOrigin ? siteKeyForOrigin(apiOrigin) : "";
+    const crossSite = Boolean(requestSite && apiSite && requestSite !== apiSite);
+    if (crossSite) {
+      return { sameSite: "None" as const, secure: true };
+    }
+    const secure = requestOrigin ? requestOrigin.startsWith("https://") : webOrigin.startsWith("https://");
+    return { sameSite: "Lax" as const, secure };
   }
 
   function expandWwwOriginAliases(origin: string) {
@@ -1161,7 +1210,7 @@ export async function buildServer() {
       create: { evmAddress },
       update: {}
     });
-    appendSetCookie(reply, buildSessionCookie(rawSessionToken, USER_SESSION_TTL_SECONDS_DEFAULT));
+    appendSetCookie(reply, buildSessionCookie(req, rawSessionToken, USER_SESSION_TTL_SECONDS_DEFAULT));
     return reply.send({
       session: {
         authenticated: true,
@@ -1174,7 +1223,7 @@ export async function buildServer() {
   app.get("/auth/session", async (req, reply) => {
     const session = await readUserSession(req);
     if (!session) {
-      appendSetCookie(reply, clearSessionCookie());
+      appendSetCookie(reply, clearSessionCookie(req));
       return reply.send({
         session: {
           authenticated: false,
@@ -1195,7 +1244,7 @@ export async function buildServer() {
   app.get("/user/profile", async (req, reply) => {
     const session = await readUserSession(req);
     if (!session) {
-      appendSetCookie(reply, clearSessionCookie());
+      appendSetCookie(reply, clearSessionCookie(req));
       return reply.send({
         authenticated: false,
         user: null,
