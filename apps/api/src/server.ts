@@ -144,6 +144,11 @@ export async function buildServer() {
     }
   }
 
+  function normalizeFastHex(value: unknown) {
+    if (typeof value !== "string") return "";
+    return value.trim().toLowerCase().replace(/^0x/i, "");
+  }
+
   function sha256Hex(value: string) {
     return crypto.createHash("sha256").update(value).digest("hex");
   }
@@ -1281,7 +1286,7 @@ export async function buildServer() {
     }
     const data = body as Record<string, unknown>;
     const fastAddress = normalizeFastAddressOrEmpty(data.address);
-    const fastPublicKey = typeof data.publicKey === "string" ? data.publicKey.trim().toLowerCase() : "";
+    const fastPublicKey = normalizeFastHex(data.publicKey);
     if (!fastAddress) return reply.code(400).send({ error: "Valid FAST address is required" });
     if (!FAST_PUBLIC_KEY_REGEX.test(fastPublicKey)) {
       return reply.code(400).send({ error: "FAST public key must be 32-byte hex" });
@@ -1332,10 +1337,10 @@ export async function buildServer() {
     }
     const data = body as Record<string, unknown>;
     const fastAddress = normalizeFastAddressOrEmpty(data.address);
-    const fastPublicKey = typeof data.publicKey === "string" ? data.publicKey.trim().toLowerCase() : "";
+    const fastPublicKey = normalizeFastHex(data.publicKey);
     const nonce = typeof data.nonce === "string" ? data.nonce.trim() : "";
-    const signature = typeof data.signature === "string" ? data.signature.trim() : "";
-    const messageBytes = typeof data.messageBytes === "string" ? data.messageBytes.trim() : "";
+    const signature = normalizeFastHex(data.signature);
+    const messageBytes = normalizeFastHex(data.messageBytes);
     if (!fastAddress || !FAST_PUBLIC_KEY_REGEX.test(fastPublicKey) || !nonce || !messageBytes || !FAST_SIGNATURE_HEX_REGEX.test(signature)) {
       return reply.code(400).send({ error: "Missing or invalid FAST bind payload" });
     }

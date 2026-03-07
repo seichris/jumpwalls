@@ -56,6 +56,10 @@ export function canonicalFastAddress(value: string) {
   return value.trim().toLowerCase().replace(/^set1/i, "fast1");
 }
 
+export function normalizeFastHex(value: string) {
+  return value.trim().toLowerCase().replace(/^0x/i, "");
+}
+
 export async function waitForFastWallet(timeoutMs = 2500) {
   const wallet = getFastWallet();
   if (wallet) return wallet;
@@ -88,11 +92,15 @@ export async function connectFastWallet() {
   const account = accounts[0];
   if (!account) throw new Error("FastSet wallet returned no accounts.");
   if (!isFastWalletAddress(account.address)) throw new Error("FastSet wallet returned an invalid FAST address.");
+  const publicKey = normalizeFastHex(account.publicKey);
+  if (!/^[a-f0-9]{64}$/.test(publicKey)) {
+    throw new Error("FastSet wallet returned an invalid FAST public key.");
+  }
   return {
     wallet,
     account: {
       address: canonicalFastAddress(account.address),
-      publicKey: account.publicKey.trim().toLowerCase(),
+      publicKey,
     },
   };
 }
@@ -104,8 +112,8 @@ export async function signFastMessage(input: { wallet: FastWalletApi; account: F
     account: input.account,
   });
   return {
-    signature: result.signature.trim().toLowerCase(),
-    messageBytes: result.messageBytes.trim().toLowerCase(),
+    signature: normalizeFastHex(result.signature),
+    messageBytes: normalizeFastHex(result.messageBytes),
   };
 }
 
