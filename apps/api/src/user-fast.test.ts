@@ -134,6 +134,57 @@ test("fast bind normalizes legacy set1 input to canonical fast1 storage", async 
   await app.close();
 });
 
+test("fast bind accepts 0x-prefixed public keys from FastSet", async () => {
+  await clearTables();
+  const app = await buildServer();
+  const evmAccount = privateKeyToAccount(TEST_PRIVATE_KEY);
+  const cookie = await createUserSessionCookie(app, evmAccount.address.toLowerCase());
+  const publicKey = Buffer.from(await ed25519.getPublicKeyAsync(Buffer.from(TEST_FAST_PRIVATE_KEY, "hex"))).toString("hex");
+  const prefixedPublicKey = `0x${publicKey}`;
+  const canonicalAddress = publicKeyToFastAddress(publicKey, "fast");
+
+  const challengeResponse = await app.inject({
+    method: "POST",
+    url: "/user/fast/challenge",
+    headers: { cookie },
+    payload: {
+      address: canonicalAddress,
+      publicKey: prefixedPublicKey,
+    }
+  });
+  assert.equal(challengeResponse.statusCode, 200);
+  const challengeBody = challengeResponse.json() as {
+    challenge: { nonce: string; publicKey: string; messageToSign: string };
+  };
+  assert.equal(challengeBody.challenge.publicKey, publicKey);
+
+  const messageBytes = Buffer.from(challengeBody.challenge.messageToSign, "utf8");
+  const signature = Buffer.from(
+    await ed25519.signAsync(messageBytes, Buffer.from(TEST_FAST_PRIVATE_KEY, "hex"))
+  ).toString("hex");
+
+  const bindResponse = await app.inject({
+    method: "POST",
+    url: "/user/fast/bind",
+    headers: { cookie },
+    payload: {
+      address: canonicalAddress,
+      publicKey: prefixedPublicKey,
+      nonce: challengeBody.challenge.nonce,
+      signature: `0x${signature}`,
+      messageBytes: `0x${messageBytes.toString("hex")}`,
+    }
+  });
+  assert.equal(bindResponse.statusCode, 200);
+  const bindBody = bindResponse.json() as {
+    user: { fastAddress: string | null; fastPublicKey: string | null };
+  };
+  assert.equal(bindBody.user.fastAddress, canonicalAddress);
+  assert.equal(bindBody.user.fastPublicKey, publicKey);
+
+  await app.close();
+});
+
 test("requests endpoint aggregates BASE and FAST rails", async () => {
   await clearTables();
   const app = await buildServer();
