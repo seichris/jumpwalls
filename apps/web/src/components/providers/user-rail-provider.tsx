@@ -9,7 +9,7 @@ import {
   getUserProfile,
   verifyUserAuthChallenge,
 } from "@/lib/api";
-import { connectFastWallet, signFastMessage } from "@/lib/fast-wallet";
+import { BrowserFastProvider, BrowserFastWallet } from "@/lib/fast-browser";
 import { useWallet } from "@/lib/hooks/useWallet";
 import type { InfoFiRail, InfoFiUserProfile, InfoFiUserProfileResponse } from "@/lib/infofi-types";
 import { isPrivyFeatureEnabled } from "@/lib/privy";
@@ -148,16 +148,14 @@ export function UserRailProvider({ children }: { children: React.ReactNode }) {
       throw new Error(privyEnabled ? "Authenticate with the Privy wallet first." : "Authenticate with your EVM wallet first.");
     }
 
-    const { wallet, account } = await connectFastWallet();
+    const fastProvider = new BrowserFastProvider();
+    const fastWallet = await new BrowserFastWallet().connect(fastProvider);
+    const account = await fastWallet.exportKeys();
     const challenge = await createFastBindChallenge({
       address: account.address,
       publicKey: account.publicKey,
     });
-    const signed = await signFastMessage({
-      wallet,
-      account,
-      message: challenge.messageToSign,
-    });
+    const signed = await fastWallet.sign({ message: challenge.messageToSign });
     const user = await bindFastWalletApi({
       address: challenge.address,
       publicKey: challenge.publicKey,

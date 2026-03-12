@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 
+import { FastProvider, FastWallet } from "@fastxyz/sdk";
 import { bcs } from "@mysten/bcs";
 import * as ed25519 from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha512";
@@ -8,14 +9,14 @@ import { bech32m } from "bech32";
 
 ((ed25519 as any).hashes ?? ((ed25519 as any).hashes = {})).sha512 = sha512;
 
+const FAST_NETWORK_DEFAULT = "mainnet";
 const FAST_RPC_URL_DEFAULT = "https://api.fast.xyz/proxy";
-export const FAST_SETTLEMENT_TOKEN_SYMBOL = "SETUSDC";
+const FAST_EXPLORER_URL_DEFAULT = "https://explorer.fast.xyz";
+export const FAST_SETTLEMENT_TOKEN_SYMBOL = "fastUSDC";
 export const FAST_SETTLEMENT_TOKEN_DECIMALS = 6;
-export const FAST_SETTLEMENT_TOKEN_ID_HEX = "0x1e744900021182b293538bb6685b77df095e351364d550021614ce90c8ab9e0a";
-const FAST_SETTLEMENT_TOKEN_ID = new Uint8Array(Buffer.from(FAST_SETTLEMENT_TOKEN_ID_HEX.slice(2), "hex"));
 
 const AmountBcs = bcs.u256().transform({
-  input: (val: string) => BigInt(`0x${val}`).toString(),
+  input: (val: string) => BigInt(`0x${normalizeHex(val)}`).toString(),
 });
 
 const TokenTransferBcs = bcs.struct("TokenTransfer", {
@@ -140,13 +141,89 @@ export type FastTransactionCertificate = {
   signatures: Array<[number[], number[]]>;
 };
 
+type FastSettlementTokenInfo = {
+  decimals: number;
+  symbol: string;
+  tokenId: string;
+};
+
+let fastProviderPromise: Promise<FastProvider> | null = null;
+let fastSettlementTokenInfoPromise: Promise<FastSettlementTokenInfo> | null = null;
+let fastTreasuryWalletPromise: Promise<FastWallet> | null = null;
+
+export function resetFastSdkCaches() {
+  fastProviderPromise = null;
+  fastSettlementTokenInfoPromise = null;
+  fastTreasuryWalletPromise = null;
+}
+
 function normalizeHex(value: string) {
   const trimmed = value.trim();
   return trimmed.startsWith("0x") || trimmed.startsWith("0X") ? trimmed.slice(2).toLowerCase() : trimmed.toLowerCase();
 }
 
+export function fastNetwork() {
+  return (process.env.FAST_NETWORK || FAST_NETWORK_DEFAULT).trim() || FAST_NETWORK_DEFAULT;
+}
+
 export function fastRpcUrl() {
   return (process.env.FAST_RPC_URL || FAST_RPC_URL_DEFAULT).trim() || FAST_RPC_URL_DEFAULT;
+}
+
+function fastExplorerBaseUrl() {
+  return (process.env.FAST_EXPLORER_URL || FAST_EXPLORER_URL_DEFAULT).trim() || FAST_EXPLORER_URL_DEFAULT;
+}
+
+async function getFastProvider() {
+  if (!fastProviderPromise) {
+    fastProviderPromise = (async () => {
+      const provider = new FastProvider({
+        network: fastNetwork(),
+        rpcUrl: process.env.FAST_RPC_URL?.trim() || undefined,
+        explorerUrl: fastExplorerBaseUrl(),
+      });
+      if (!process.env.FAST_RPC_URL?.trim()) {
+        await provider.getExplorerUrl();
+      }
+      return provider;
+    })();
+  }
+  return await fastProviderPromise;
+}
+
+async function resolvedFastRpcUrl() {
+  if (process.env.FAST_RPC_URL?.trim()) return fastRpcUrl();
+  return (await getFastProvider()).rpcUrl;
+}
+
+export async function fastExplorerUrl(txHash?: string) {
+  return await (await getFastProvider()).getExplorerUrl(txHash);
+}
+
+export async function fastSettlementTokenInfo() {
+  if (!fastSettlementTokenInfoPromise) {
+    fastSettlementTokenInfoPromise = (async () => {
+      const provider = await getFastProvider();
+      const token = await provider.getTokenInfo(FAST_SETTLEMENT_TOKEN_SYMBOL);
+      if (!token || token.tokenId === "native") {
+        throw new Error(`FAST settlement token ${FAST_SETTLEMENT_TOKEN_SYMBOL} is not configured.`);
+      }
+      return {
+        symbol: FAST_SETTLEMENT_TOKEN_SYMBOL,
+        decimals: token.decimals || FAST_SETTLEMENT_TOKEN_DECIMALS,
+        tokenId: token.tokenId.toLowerCase(),
+      };
+    })();
+  }
+  return await fastSettlementTokenInfoPromise;
+}
+
+export async function fastSettlementTokenIdHex() {
+  return (await fastSettlementTokenInfo()).tokenId;
+}
+
+async function fastSettlementTokenIdBytes() {
+  return new Uint8Array(Buffer.from(normalizeHex(await fastSettlementTokenIdHex()), "hex"));
 }
 
 export function fastTreasuryPrivateKey() {
@@ -158,11 +235,17 @@ export function fastTreasuryPrivateKey() {
   return normalizeHex(raw);
 }
 
+async function getFastTreasuryWallet() {
+  if (!fastTreasuryWalletPromise) {
+    fastTreasuryWalletPromise = FastWallet.fromPrivateKey(fastTreasuryPrivateKey(), await getFastProvider());
+  }
+  return await fastTreasuryWalletPromise;
+}
+
 export async function fastTreasuryAddress() {
   const configured = (process.env.FAST_TREASURY_ADDRESS || "").trim();
   if (configured) return normalizeFastAddress(configured);
-  const publicKey = await ed25519.getPublicKeyAsync(Buffer.from(fastTreasuryPrivateKey(), "hex"));
-  return publicKeyToFastAddress(publicKey);
+  return normalizeFastAddress((await getFastTreasuryWallet()).address);
 }
 
 export function publicKeyToFastAddress(publicKey: string | Uint8Array, hrp = "fast") {
@@ -229,7 +312,7 @@ export async function fastRpcCall<T = unknown>(method: string, params: Record<st
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(fastRpcUrl(), {
+    const response = await fetch(await resolvedFastRpcUrl(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: jsonBody({ jsonrpc: "2.0", id: 1, method, params }),
@@ -254,10 +337,6 @@ export async function getFastAccountInfo(address: string, certificateByNonce?: {
   });
 }
 
-function settlementTokenIdHex() {
-  return Buffer.from(FAST_SETTLEMENT_TOKEN_ID).toString("hex");
-}
-
 function amountDecimalToRpcHex(value: string) {
   const atomic = BigInt(value);
   if (atomic < 0n) throw new Error("FAST amount must be non-negative.");
@@ -270,20 +349,16 @@ function amountHexToDecimal(value: string) {
   return BigInt(`0x${normalized}`).toString(10);
 }
 
-function transactionTimestamp() {
-  return BigInt(Date.now()) * 1000000n;
-}
-
 export function hashFastTransaction(transaction: FastTransaction) {
   const serialized = TransactionBcs.serialize(transaction as any).toBytes();
   const hash = keccak_256(serialized);
   return `0x${Buffer.from(hash).toString("hex")}`;
 }
 
-export function buildFastTokenTransferClaim(amountWei: string) {
+export async function buildFastTokenTransferClaim(amountWei: string) {
   return {
     TokenTransfer: {
-      token_id: FAST_SETTLEMENT_TOKEN_ID,
+      token_id: await fastSettlementTokenIdBytes(),
       amount: amountDecimalToRpcHex(amountWei),
       user_data: null,
     },
@@ -331,7 +406,7 @@ export async function verifyFastFundingCertificate(args: {
   if (transfer.amountWei !== BigInt(args.expectedAmountWei).toString(10)) {
     throw new Error("FAST funding amount does not match request max.");
   }
-  if (transfer.tokenIdHex !== settlementTokenIdHex()) {
+  if (transfer.tokenIdHex !== normalizeHex(await fastSettlementTokenIdHex())) {
     throw new Error(`FAST rail supports ${FAST_SETTLEMENT_TOKEN_SYMBOL} only.`);
   }
 
@@ -367,39 +442,19 @@ export async function submitFastTreasuryTransfer(args: {
   to: string;
   amountWei: string;
 }) {
-  const privateKey = fastTreasuryPrivateKey();
-  const senderPublicKey = await ed25519.getPublicKeyAsync(Buffer.from(privateKey, "hex"));
-  const senderAddress = publicKeyToFastAddress(senderPublicKey);
-  const recipientBytes = fastAddressToPublicKeyBytes(args.to);
-  const accountInfo = await getFastAccountInfo(senderAddress);
-  const nonce = Number(accountInfo.next_nonce || 0);
-
-  const transaction: FastTransaction = {
-    sender: Array.from(senderPublicKey),
-    recipient: Array.from(recipientBytes),
-    nonce,
-    timestamp_nanos: transactionTimestamp(),
-    claim: buildFastTokenTransferClaim(args.amountWei),
-    archival: false,
+  const wallet = await getFastTreasuryWallet();
+  const certificate = (await wallet.submit({
+    recipient: normalizeFastAddress(args.to),
+    claim: await buildFastTokenTransferClaim(args.amountWei),
+  })) as {
+    certificate: FastTransactionCertificate;
+    txHash: string;
   };
-
-  const msgHead = new TextEncoder().encode("Transaction::");
-  const msgBody = TransactionBcs.serialize(transaction as any).toBytes();
-  const msg = new Uint8Array(msgHead.length + msgBody.length);
-  msg.set(msgHead, 0);
-  msg.set(msgBody, msgHead.length);
-  const signature = await ed25519.signAsync(msg, Buffer.from(privateKey, "hex"));
-
-  const submitResult = await fastRpcCall<any>("proxy_submitTransaction", {
-    transaction,
-    signature: { Signature: Array.from(signature) },
-  });
-  const certificate = (submitResult?.Success ?? submitResult) as FastTransactionCertificate;
-  const transfer = extractFastTransfer(certificate);
+  const transfer = extractFastTransfer(certificate.certificate);
   return {
-    txHash: transfer.txHash,
-    nonce,
-    certificate,
-    senderAddress,
+    txHash: transfer.txHash || certificate.txHash,
+    nonce: transfer.nonce,
+    certificate: certificate.certificate,
+    senderAddress: normalizeFastAddress(wallet.address),
   };
 }

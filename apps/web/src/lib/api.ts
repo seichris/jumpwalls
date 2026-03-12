@@ -19,6 +19,14 @@ export type InfoFiAgentIdentity = {
   clientVersion: string | null;
 };
 
+export type FastConfig = {
+  treasuryAddress: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
+  tokenId: string;
+  explorerUrl?: string | null;
+};
+
 function apiBase() {
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787";
 }
@@ -355,7 +363,7 @@ export async function getFastConfig() {
     credentials: "include",
     cache: "no-store",
   });
-  const data = await parseResponse<{ config: { treasuryAddress: string } }>(response);
+  const data = await parseResponse<{ config: FastConfig }>(response);
   return data.config;
 }
 

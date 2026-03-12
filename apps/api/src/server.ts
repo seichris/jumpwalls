@@ -7,8 +7,9 @@ import { combineFairUseWithLlm, parseFairUseEnforcementMode, reviewDigestFairUse
 import { reviewDigestFairUseWithGemini } from "./fairUseGemini.js";
 import {
   FAST_SETTLEMENT_TOKEN_DECIMALS,
-  FAST_SETTLEMENT_TOKEN_ID_HEX,
   FAST_SETTLEMENT_TOKEN_SYMBOL,
+  fastExplorerUrl,
+  fastSettlementTokenIdHex,
   fastTreasuryAddress,
   normalizeFastAddress,
   publicKeyToFastAddress,
@@ -1396,7 +1397,8 @@ export async function buildServer() {
         treasuryAddress: await fastTreasuryAddress(),
         tokenSymbol: FAST_SETTLEMENT_TOKEN_SYMBOL,
         tokenDecimals: FAST_SETTLEMENT_TOKEN_DECIMALS,
-        tokenId: FAST_SETTLEMENT_TOKEN_ID_HEX,
+        tokenId: await fastSettlementTokenIdHex(),
+        explorerUrl: await fastExplorerUrl(),
       }
     };
   });

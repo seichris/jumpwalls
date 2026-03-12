@@ -1,137 +1,50 @@
 "use client";
 
-import { parseUnits } from "viem";
+import { BrowserFastProvider, BrowserFastWallet } from "./fast-browser";
+import {
+  canonicalFastAddress,
+  fastAmountToTransferHex,
+  isFastWalletAddress,
+  normalizeFastHex,
+  type FastSetAccount,
+  type FastSetTransferCertificate,
+} from "./fastset-transport";
 
-export const FAST_SETTLEMENT_TOKEN = "SETUSDC";
+export const FAST_SETTLEMENT_TOKEN = "fastUSDC";
 export const FAST_SETTLEMENT_TOKEN_DECIMALS = 6;
-export const FAST_SETTLEMENT_TOKEN_ID = "0x1e744900021182b293538bb6685b77df095e351364d550021614ce90c8ab9e0a";
 
-export type FastWalletAccount = {
-  address: string;
-  publicKey: string;
-};
+export type FastWalletAccount = FastSetAccount;
+export type FastWalletTransferCertificate = FastSetTransferCertificate;
 
-export type FastWalletTransferCertificate = {
-  envelope: {
-    transaction: unknown;
-    signature: unknown;
-  };
-  signatures: Array<[number[], number[]]>;
-};
-
-type FastWalletApi = {
-  connect: (options?: { permissions: string[] }) => Promise<boolean>;
-  getAccounts: () => Promise<FastWalletAccount[]>;
-  signMessage: (params: { message: number[]; account: FastWalletAccount }) => Promise<{ signature: string; messageBytes: string }>;
-  transfer: (params: {
-    amount: string;
-    recipient: string;
-    account: FastWalletAccount;
-    tokenId?: string;
-  }) => Promise<FastWalletTransferCertificate>;
-  disconnect?: () => Promise<boolean>;
-};
-
-declare global {
-  interface Window {
-    fastset?: FastWalletApi;
-  }
-}
-
-const FASTSET_PERMISSIONS = ["viewAccount", "suggestTransactions"];
-
-function fastsetWindow(): Window | null {
-  return typeof window === "undefined" ? null : window;
-}
-
-export function getFastWallet() {
-  return fastsetWindow()?.fastset ?? null;
-}
-
-export function isFastWalletAddress(value: string) {
-  return /^(fast|set)1[0-9ac-hj-np-z]{38,87}$/i.test(value.trim());
-}
-
-export function canonicalFastAddress(value: string) {
-  return value.trim().toLowerCase().replace(/^set1/i, "fast1");
-}
-
-export function normalizeFastHex(value: string) {
-  return value.trim().toLowerCase().replace(/^0x/i, "");
-}
-
-export async function waitForFastWallet(timeoutMs = 2500) {
-  const wallet = getFastWallet();
-  if (wallet) return wallet;
-
-  const win = fastsetWindow();
-  if (!win) return null;
-
-  return await new Promise<FastWalletApi | null>((resolve) => {
-    const timer = window.setTimeout(() => {
-      win.removeEventListener("fastset#initialized", onReady as EventListener);
-      resolve(getFastWallet());
-    }, timeoutMs);
-
-    const onReady = () => {
-      window.clearTimeout(timer);
-      win.removeEventListener("fastset#initialized", onReady as EventListener);
-      resolve(getFastWallet());
-    };
-
-    win.addEventListener("fastset#initialized", onReady as EventListener, { once: true });
-  });
-}
+export { BrowserFastProvider, BrowserFastWallet, canonicalFastAddress, fastAmountToTransferHex, isFastWalletAddress, normalizeFastHex };
 
 export async function connectFastWallet() {
-  const wallet = await waitForFastWallet();
-  if (!wallet) throw new Error("FastSet wallet extension not found.");
-  const connected = await wallet.connect({ permissions: FASTSET_PERMISSIONS });
-  if (!connected) throw new Error("FastSet wallet connection was rejected.");
-  const accounts = await wallet.getAccounts();
-  const account = accounts[0];
-  if (!account) throw new Error("FastSet wallet returned no accounts.");
-  if (!isFastWalletAddress(account.address)) throw new Error("FastSet wallet returned an invalid FAST address.");
-  const publicKey = normalizeFastHex(account.publicKey);
-  if (!/^[a-f0-9]{64}$/.test(publicKey)) {
-    throw new Error("FastSet wallet returned an invalid FAST public key.");
-  }
+  const wallet = await new BrowserFastWallet().connect(new BrowserFastProvider());
   return {
     wallet,
-    account: {
-      address: canonicalFastAddress(account.address),
-      publicKey,
-    },
+    account: await wallet.exportKeys(),
   };
 }
 
-export async function signFastMessage(input: { wallet: FastWalletApi; account: FastWalletAccount; message: string }) {
-  const messageBytes = Array.from(new TextEncoder().encode(input.message));
-  const result = await input.wallet.signMessage({
-    message: messageBytes,
-    account: input.account,
-  });
+export async function signFastMessage(input: { wallet: BrowserFastWallet; account: FastWalletAccount; message: string }) {
+  void input.account;
+  const signed = await input.wallet.sign({ message: input.message });
   return {
-    signature: normalizeFastHex(result.signature),
-    messageBytes: normalizeFastHex(result.messageBytes),
+    signature: signed.signature,
+    messageBytes: signed.messageBytes,
   };
-}
-
-export function fastAmountToTransferHex(amount: string) {
-  const atomic = parseUnits(amount, FAST_SETTLEMENT_TOKEN_DECIMALS);
-  return `0x${atomic.toString(16)}`;
 }
 
 export async function transferFast(input: {
-  wallet: FastWalletApi;
+  wallet: BrowserFastWallet;
   account: FastWalletAccount;
   recipient: string;
   amount: string;
 }) {
-  return await input.wallet.transfer({
-    recipient: canonicalFastAddress(input.recipient),
-    amount: fastAmountToTransferHex(input.amount),
-    account: input.account,
-    tokenId: FAST_SETTLEMENT_TOKEN_ID,
+  void input.account;
+  const sent = await input.wallet.send({
+    to: input.recipient,
+    amount: input.amount,
   });
+  return sent.certificate as FastWalletTransferCertificate;
 }

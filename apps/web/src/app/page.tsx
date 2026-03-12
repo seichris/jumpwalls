@@ -604,6 +604,7 @@ export default function HomePage() {
             <SelectItem value="ALL">All tokens</SelectItem>
             <SelectItem value="ETH">ETH</SelectItem>
             <SelectItem value="USDC">USDC</SelectItem>
+            <SelectItem value="fastUSDC">fastUSDC</SelectItem>
             <SelectItem value="SETUSDC">SETUSDC</SelectItem>
           </SelectContent>
         </Select>

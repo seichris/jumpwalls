@@ -10,8 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createFastRequest, getFastConfig } from "@/lib/api";
-import { connectFastWallet, transferFast } from "@/lib/fast-wallet";
+import { createFastRequest } from "@/lib/api";
+import { BrowserFastProvider, BrowserFastWallet } from "@/lib/fast-browser";
 import { deriveRequestId, ETH_TOKEN, FAST_SETTLEMENT_TOKEN, parseAmount, postRequestTx, randomSalt, usdcForChain } from "@/lib/infofi-contract";
 import { fullTextRisk, logUiAction, lowBudgetWarning } from "@/lib/infofi-ux";
 import { friendlyTxError } from "@/lib/utils";
@@ -73,21 +73,20 @@ export function PostRequestDialog({
     try {
       if (activeRail === "FAST") {
         await ensureRail("FAST");
-        const { wallet, account } = await connectFastWallet();
-        const { treasuryAddress } = await getFastConfig();
-        const fundingCertificate = await transferFast({
-          wallet,
-          account,
-          recipient: treasuryAddress,
+        const fastProvider = new BrowserFastProvider();
+        const fastWallet = await new BrowserFastWallet().connect(fastProvider);
+        const { treasuryAddress, tokenSymbol } = await fastProvider.getConfig();
+        const funding = await fastWallet.send({
+          to: treasuryAddress,
           amount: maxAmount,
         });
         const created = await createFastRequest({
           sourceURI: sourceURI.trim(),
           question: question.trim(),
-          maxAmountWei: parseAmount(FAST_SETTLEMENT_TOKEN, maxAmount).toString(),
-          fundingCertificate,
+          maxAmountWei: parseAmount(tokenSymbol, maxAmount).toString(),
+          fundingCertificate: funding.certificate,
         });
-        logUiAction("post_request_fast", { token: FAST_SETTLEMENT_TOKEN, maxAmount });
+        logUiAction("post_request_fast", { token: tokenSymbol, maxAmount });
         onOpenChange(false);
         onCreated?.(created.requestId);
         return;
